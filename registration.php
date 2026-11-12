@@ -8,4 +8,3 @@ ComponentRegistrar::register(
     'Grigoli_CheckoutResilience',
     __DIR__
 );
-
