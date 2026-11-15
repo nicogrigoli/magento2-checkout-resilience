@@ -26,11 +26,12 @@ A payment-method-agnostic Adobe Commerce / Magento 2 module designed to improve 
 * **Role-Based Access Control (ACL):** Dedicated ACL resource (`Grigoli_CheckoutResilience::checkout_resilience`) nested under the **Sales** permission tree to restrict configuration access to authorized administrators.
 * **Typed Configuration Service (`Model\Config`):** Strictly typed service class using `ScopeConfigInterface` to read module settings with `ScopeInterface::SCOPE_STORE` support.
 * **Frontend Checkout Configuration Injection (`Model\Checkout\ConfigProvider`):** Implements `Magento\Checkout\Model\ConfigProviderInterface` and registers into `Magento\Checkout\Model\CompositeConfigProvider` to expose `window.checkoutConfig.resilience.enabled` on the storefront checkout page.
-* **Unit Test Coverage:** Comprehensive PHPUnit test suites covering `Model\Config` and `Model\Checkout\ConfigProvider` across store scopes and state permutations.
+* **Quote Reactivation Service (`Model\QuoteRestoreManagement`):** Centralized service that locates and reactivates inactive quotes for both guest users (via masked cart IDs) and logged-in customers (via their most recent order), resets `is_active = 1` and `reserved_order_id = null`, persists the quote via `CartRepositoryInterface`, and dispatches the `resilience_restore_quote` event.
+* **Cart Recovery via REST WebAPI (`Api\*`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`):** Service contracts and REST endpoints (`POST /V1/guest-carts/:cartId/resilience/restore` and `POST /V1/carts/mine/resilience/restore`) enabling headless storefronts and checkout UI components to restore quotes seamlessly.
+* **Unit Test Coverage:** Comprehensive PHPUnit test suites covering `Model\Config`, `Model\Checkout\ConfigProvider`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`, and `Model\QuoteRestoreManagement`.
 
 ### Planned Capabilities (Module Roadmap)
 * **Checkout Session & Cart Recovery:** Actionable recovery on the `checkout_onepage_failure` page allowing customers to restore their active quote and either return directly to the checkout payment step or redirect to a configurable URL.
-* **Cart Recovery by webapi:** Quote restoration from webapi.
 * **Manual Payment Retries:** Customer-initiated payment retry flow on failed transactions, governed by an admin-configurable maximum retry limit (`max_manual_retries`) and feature toggle.
 * **Automated Payment Retries:** Automatic retry execution triggered by specific, configurable gateway error codes/responses, bounded by `max_automatic_retries`.
 
@@ -93,9 +94,31 @@ bin/magento config:show checkout_resilience/basic_settings/enable
 bin/magento cache:clean config
 ```
 
-### 4. Developer Usage
+### 4. REST WebAPI Endpoints
 
-#### Backend (PHP)
+The module exposes two REST endpoints to reactivate an inactive quote after a failed payment attempt:
+
+| Method | Endpoint | Resource Access | Service Contract | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `POST` | `/V1/guest-carts/:cartId/resilience/restore` | `anonymous` | `Grigoli\CheckoutResilience\Api\GuestQuoteRestoreManagementInterface::execute` | Restores an inactive guest quote using its masked cart ID (`:cartId`). Returns `true` on success, `false` otherwise. |
+| `POST` | `/V1/carts/mine/resilience/restore` | `self` | `Grigoli\CheckoutResilience\Api\MineQuoteRestoreManagementInterface::execute` | Restores the quote associated with the authenticated customer's most recent order. Returns `true` on success, `false` otherwise. |
+
+#### Example Requests
+
+```bash
+# Restore a guest cart by masked quote ID
+curl -X POST "https://example.com/rest/V1/guest-carts/MASKED_CART_ID/resilience/restore" \
+  -H "Content-Type: application/json"
+
+# Restore the last quote for an authenticated customer
+curl -X POST "https://example.com/rest/V1/carts/mine/resilience/restore" \
+  -H "Authorization: Bearer <CUSTOMER_ACCESS_TOKEN>" \
+  -H "Content-Type: application/json"
+```
+
+### 5. Developer Usage
+
+#### Backend Configuration Check (PHP)
 Inject `Grigoli\CheckoutResilience\Model\Config` via Dependency Injection to check whether the module is enabled for the active or specified store scope:
 
 ```php
@@ -125,6 +148,12 @@ class CustomCheckoutService
 }
 ```
 
+#### Backend Quote Restoration & Dispatched Events
+When a quote is successfully restored through `Grigoli\CheckoutResilience\Model\QuoteRestoreManagement`, the module:
+1. Sets `$quote->setIsActive(1)` and `$quote->setReservedOrderId(null)`.
+2. Saves the quote via `Magento\Quote\Api\CartRepositoryInterface::save()`.
+3. Dispatches the `resilience_restore_quote` event with `['quote' => $quote]` as event data, allowing third-party modules to hook into the restoration lifecycle.
+
 #### Frontend (JavaScript / UI Components)
 On the storefront checkout page, the configuration state is automatically exposed through the global `window.checkoutConfig` object:
 
@@ -144,11 +173,15 @@ define([], function () {
 });
 ```
 
-### 5. Running Unit Tests
+### 6. Running Code Quality & Unit Tests
 
-Execute the module's PHPUnit test suite from the Magento root directory:
+Execute Magento 2 PHP_CodeSniffer and the module's PHPUnit test suite from the Magento root directory:
 
 ```bash
+# Run Magento 2 coding standards check
+vendor/bin/phpcs --standard=Magento2 app/code/Grigoli/CheckoutResilience
+
+# Run unit tests
 vendor/bin/phpunit -c dev/tests/unit/phpunit.xml.dist app/code/Grigoli/CheckoutResilience/Test/Unit
 ```
 
@@ -160,22 +193,33 @@ vendor/bin/phpunit -c dev/tests/unit/phpunit.xml.dist app/code/Grigoli/CheckoutR
 app/code/Grigoli/CheckoutResilience/
 ├── composer.json
 ├── registration.php
+├── Api/
+│   ├── GuestQuoteRestoreManagementInterface.php
+│   └── MineQuoteRestoreManagementInterface.php
 ├── etc/
 │   ├── acl.xml
 │   ├── config.xml
+│   ├── di.xml
 │   ├── module.xml
+│   ├── webapi.xml
 │   ├── adminhtml/
 │   │   └── system.xml
 │   └── frontend/
 │       └── di.xml
 ├── Model/
 │   ├── Config.php
+│   ├── GuestQuoteRestore.php
+│   ├── MineQuoteRestore.php
+│   ├── QuoteRestoreManagement.php
 │   └── Checkout/
 │       └── ConfigProvider.php
 └── Test/
     └── Unit/
         └── Model/
             ├── ConfigTest.php
+            ├── GuestQuoteRestoreTest.php
+            ├── MineQuoteRestoreTest.php
+            ├── QuoteRestoreManagementTest.php
             └── Checkout/
                 └── ConfigProviderTest.php
 ```
@@ -192,5 +236,9 @@ app/code/Grigoli/CheckoutResilience/
   Encapsulates access to `Magento\Framework\App\Config\ScopeConfigInterface::isSetFlag()` for the `checkout_resilience/basic_settings/enable` path using `ScopeInterface::SCOPE_STORE`, returning a strict `bool`.
 * **Checkout Config Provider & Frontend DI (`Model/Checkout/ConfigProvider.php`, `etc/frontend/di.xml`):**
   Implements `Magento\Checkout\Model\ConfigProviderInterface` and injects `checkout_resilience_config_provider` into `Magento\Checkout\Model\CompositeConfigProvider` (`configProviders` array argument). Exports `['resilience' => ['enabled' => bool]]` to the frontend checkout configuration payload.
-* **Unit Tests (`Test/Unit/Model/ConfigTest.php`, `Test/Unit/Model/Checkout/ConfigProviderTest.php`):**
-  PHPUnit tests using data providers and mock objects to verify store-scoped flag resolution in `Model\Config` and checkout array serialization in `Model\Checkout\ConfigProvider`.
+* **Quote Restoration Service Contracts & WebAPI (`Api/GuestQuoteRestoreManagementInterface.php`, `Api/MineQuoteRestoreManagementInterface.php`, `etc/di.xml`, `etc/webapi.xml`):**
+  Defines service contracts for guest and authenticated quote restoration, binds them to their concrete implementations (`Model\GuestQuoteRestore` and `Model\MineQuoteRestore`) in `etc/di.xml`, and exposes them as `POST` routes in `etc/webapi.xml`.
+* **Quote Restoration Management (`Model/QuoteRestoreManagement.php`, `Model/GuestQuoteRestore.php`, `Model/MineQuoteRestore.php`):**
+  Resolves guest quotes via `MaskedQuoteIdToQuoteIdInterface` and customer quotes via the latest order (`OrderRepositoryInterface` + `SearchCriteriaBuilder` + `SortOrderBuilder`), reactivates the quote (`setIsActive(1)`, `setReservedOrderId(null)`), saves it via `CartRepositoryInterface`, and dispatches the `resilience_restore_quote` event.
+* **Unit Tests (`Test/Unit/Model/*`):**
+  PHPUnit test suites using data providers and mock objects to verify store-scoped flag resolution (`ConfigTest`), checkout config serialization (`ConfigProviderTest`), WebAPI service delegation (`GuestQuoteRestoreTest`, `MineQuoteRestoreTest`), and all quote restoration scenarios and exception handling (`QuoteRestoreManagementTest`).

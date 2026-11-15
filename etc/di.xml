@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="urn:magento:framework:ObjectManager/etc/config.xsd">
+    <preference for="Grigoli\CheckoutResilience\Api\GuestQuoteRestoreManagementInterface" type="Grigoli\CheckoutResilience\Model\GuestQuoteRestore" />
+    <preference for="Grigoli\CheckoutResilience\Api\MineQuoteRestoreManagementInterface" type="Grigoli\CheckoutResilience\Model\MineQuoteRestore" />
+</config>
