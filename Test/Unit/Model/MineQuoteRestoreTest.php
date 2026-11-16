@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Grigoli\CheckoutResilience\Test\Unit\Model;
 
+use Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterface;
+use Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterfaceFactory;
 use Grigoli\CheckoutResilience\Model\MineQuoteRestore;
 use Grigoli\CheckoutResilience\Model\QuoteRestoreManagement;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -18,6 +20,11 @@ class MineQuoteRestoreTest extends TestCase
     private QuoteRestoreManagement $quoteRestoreManagementMock;
 
     /**
+     * @var QuoteRestoreResponseInterfaceFactory&MockObject
+     */
+    private QuoteRestoreResponseInterfaceFactory $responseFactoryMock;
+
+    /**
      * @var MineQuoteRestore
      */
     private MineQuoteRestore $mineQuoteRestore;
@@ -30,7 +37,11 @@ class MineQuoteRestoreTest extends TestCase
     protected function setUp(): void
     {
         $this->quoteRestoreManagementMock = $this->createMock(QuoteRestoreManagement::class);
-        $this->mineQuoteRestore = new MineQuoteRestore($this->quoteRestoreManagementMock);
+        $this->responseFactoryMock = $this->createMock(QuoteRestoreResponseInterfaceFactory::class);
+        $this->mineQuoteRestore = new MineQuoteRestore(
+            $this->quoteRestoreManagementMock,
+            $this->responseFactoryMock
+        );
     }
 
     /**
@@ -42,11 +53,22 @@ class MineQuoteRestoreTest extends TestCase
     #[DataProvider('restoreResultDataProvider')]
     public function testExecute(bool $expectedResult): void
     {
+        $responseMock = $this->createMock(QuoteRestoreResponseInterface::class);
+
         $this->quoteRestoreManagementMock->expects($this->once())
             ->method('restoreLoggedUserQuote')
             ->willReturn($expectedResult);
 
-        $this->assertSame($expectedResult, $this->mineQuoteRestore->execute());
+        $this->responseFactoryMock->expects($this->once())
+            ->method('create')
+            ->willReturn($responseMock);
+
+        $responseMock->expects($this->once())
+            ->method('setSuccess')
+            ->with($expectedResult)
+            ->willReturnSelf();
+
+        $this->assertSame($responseMock, $this->mineQuoteRestore->execute());
     }
 
     /**
