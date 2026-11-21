@@ -8,6 +8,9 @@ use Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterface;
 use Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterfaceFactory;
 use Grigoli\CheckoutResilience\Model\MineQuoteRestore;
 use Grigoli\CheckoutResilience\Model\QuoteRestoreManagement;
+use Magento\Framework\Exception\AuthorizationException;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -45,19 +48,17 @@ class MineQuoteRestoreTest extends TestCase
     }
 
     /**
-     * Test logged-in customer quote restoration execution.
+     * Test logged-in customer quote restoration execution on happy path (200 OK).
      *
-     * @param bool $expectedResult
      * @return void
      */
-    #[DataProvider('restoreResultDataProvider')]
-    public function testExecute(bool $expectedResult): void
+    public function testExecuteSuccess(): void
     {
         $responseMock = $this->createMock(QuoteRestoreResponseInterface::class);
 
         $this->quoteRestoreManagementMock->expects($this->once())
             ->method('restoreLoggedUserQuote')
-            ->willReturn($expectedResult);
+            ->willReturn(true);
 
         $this->responseFactoryMock->expects($this->once())
             ->method('create')
@@ -65,25 +66,56 @@ class MineQuoteRestoreTest extends TestCase
 
         $responseMock->expects($this->once())
             ->method('setSuccess')
-            ->with($expectedResult)
+            ->with(true)
             ->willReturnSelf();
 
         $this->assertSame($responseMock, $this->mineQuoteRestore->execute());
     }
 
     /**
-     * Data provider for logged-in customer quote restoration results.
+     * Test that WebAPI exceptions thrown during customer quote restoration propagate to the ErrorProcessor.
      *
-     * @return array<string, array{expectedResult: bool}>
+     * @param \Throwable $exception
+     * @return void
      */
-    public static function restoreResultDataProvider(): array
+    #[DataProvider('exceptionDataProvider')]
+    public function testExecutePropagatesExceptions(\Throwable $exception): void
+    {
+        $this->responseFactoryMock->expects($this->once())
+            ->method('create')
+            ->willReturn($this->createStub(QuoteRestoreResponseInterface::class));
+
+        $this->quoteRestoreManagementMock->expects($this->once())
+            ->method('restoreLoggedUserQuote')
+            ->willThrowException($exception);
+
+        $this->expectException($exception::class);
+        $this->expectExceptionMessage($exception->getMessage());
+
+        $this->mineQuoteRestore->execute();
+    }
+
+    /**
+     * Data provider for logged-in customer quote restoration exception scenarios.
+     *
+     * @return array<string, array{exception: \Throwable}>
+     */
+    public static function exceptionDataProvider(): array
     {
         return [
-            'quote restored successfully' => [
-                'expectedResult' => true,
+            '400 Bad Request - LocalizedException' => [
+                'exception' => new LocalizedException(__('Checkout resilience is disabled.')),
             ],
-            'quote restoration failed' => [
-                'expectedResult' => false,
+            '401 Unauthorized - AuthorizationException' => [
+                'exception' => new AuthorizationException(
+                    __('The current customer is not authorized to restore this quote.')
+                ),
+            ],
+            '404 Not Found - NoSuchEntityException' => [
+                'exception' => new NoSuchEntityException(__('No quote found for customer ID "10".')),
+            ],
+            '500 Internal Server Error - RuntimeException' => [
+                'exception' => new \RuntimeException('An unexpected error occurred while restoring the quote.'),
             ],
         ];
     }

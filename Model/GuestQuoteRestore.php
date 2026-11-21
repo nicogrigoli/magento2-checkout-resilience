@@ -27,6 +27,11 @@ class GuestQuoteRestore implements GuestQuoteRestoreManagementInterface
      *
      * @param string $cartId
      * @return QuoteRestoreResponseInterface
+     * @throws \Magento\Framework\Exception\InputException
+     * @throws \Magento\Framework\Exception\AuthorizationException
+     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @throws \Magento\Framework\Exception\LocalizedException
+     * @throws \Exception
      */
     public function execute(string $cartId): QuoteRestoreResponseInterface
     {
