@@ -26,6 +26,10 @@ class MineQuoteRestore implements MineQuoteRestoreManagementInterface
      * Restore the last inactive quote for a logged-in customer.
      *
      * @return QuoteRestoreResponseInterface
+     * @throws \Magento\Framework\Exception\AuthorizationException
+     * @throws \Magento\Framework\Exception\NoSuchEntityException
+     * @throws \Magento\Framework\Exception\LocalizedException
+     * @throws \Exception
      */
     public function execute(): QuoteRestoreResponseInterface
     {

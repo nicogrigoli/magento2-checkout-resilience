@@ -8,6 +8,10 @@ use Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterface;
 use Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterfaceFactory;
 use Grigoli\CheckoutResilience\Model\GuestQuoteRestore;
 use Grigoli\CheckoutResilience\Model\QuoteRestoreManagement;
+use Magento\Framework\Exception\AuthorizationException;
+use Magento\Framework\Exception\InputException;
+use Magento\Framework\Exception\LocalizedException;
+use Magento\Framework\Exception\NoSuchEntityException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -45,21 +49,19 @@ class GuestQuoteRestoreTest extends TestCase
     }
 
     /**
-     * Test guest quote restoration execution.
+     * Test guest quote restoration execution on happy path (200 OK).
      *
-     * @param string $cartId
-     * @param bool $expectedResult
      * @return void
      */
-    #[DataProvider('restoreResultDataProvider')]
-    public function testExecute(string $cartId, bool $expectedResult): void
+    public function testExecuteSuccess(): void
     {
+        $cartId = 'masked_cart_id_123';
         $responseMock = $this->createMock(QuoteRestoreResponseInterface::class);
 
         $this->quoteRestoreManagementMock->expects($this->once())
             ->method('restoreGuestUserQuote')
             ->with($cartId)
-            ->willReturn($expectedResult);
+            ->willReturn(true);
 
         $this->responseFactoryMock->expects($this->once())
             ->method('create')
@@ -67,27 +69,66 @@ class GuestQuoteRestoreTest extends TestCase
 
         $responseMock->expects($this->once())
             ->method('setSuccess')
-            ->with($expectedResult)
+            ->with(true)
             ->willReturnSelf();
 
         $this->assertSame($responseMock, $this->guestQuoteRestore->execute($cartId));
     }
 
     /**
-     * Data provider for guest quote restoration results.
+     * Test that WebAPI exceptions thrown during guest quote restoration propagate to the ErrorProcessor.
      *
-     * @return array<string, array{cartId: string, expectedResult: bool}>
+     * @param string $cartId
+     * @param \Throwable $exception
+     * @return void
      */
-    public static function restoreResultDataProvider(): array
+    #[DataProvider('exceptionDataProvider')]
+    public function testExecutePropagatesExceptions(string $cartId, \Throwable $exception): void
+    {
+        $this->responseFactoryMock->expects($this->once())
+            ->method('create')
+            ->willReturn($this->createStub(QuoteRestoreResponseInterface::class));
+
+        $this->quoteRestoreManagementMock->expects($this->once())
+            ->method('restoreGuestUserQuote')
+            ->with($cartId)
+            ->willThrowException($exception);
+
+        $this->expectException($exception::class);
+        $this->expectExceptionMessage($exception->getMessage());
+
+        $this->guestQuoteRestore->execute($cartId);
+    }
+
+    /**
+     * Data provider for guest quote restoration exception scenarios.
+     *
+     * @return array<string, array{cartId: string, exception: \Throwable}>
+     */
+    public static function exceptionDataProvider(): array
     {
         return [
-            'quote restored successfully' => [
-                'cartId' => 'masked_cart_id_123',
-                'expectedResult' => true,
+            '400 Bad Request - InputException' => [
+                'cartId' => '',
+                'exception' => InputException::requiredField('cartId'),
             ],
-            'quote restoration failed' => [
-                'cartId' => 'invalid_masked_cart_id',
-                'expectedResult' => false,
+            '400 Bad Request - LocalizedException' => [
+                'cartId' => 'masked_cart_123',
+                'exception' => new LocalizedException(__('Checkout resilience is disabled.')),
+            ],
+            '401 Unauthorized - AuthorizationException' => [
+                'cartId' => 'masked_cart_123',
+                'exception' => new AuthorizationException(
+                    __('The guest user is not authorized to restore a customer quote.')
+                ),
+            ],
+            '404 Not Found - NoSuchEntityException' => [
+                'cartId' => 'non_existent_cart',
+                'exception' => new NoSuchEntityException(__('No such entity with cartId = non_existent_cart')),
+            ],
+            '500 Internal Server Error - RuntimeException' => [
+                'cartId' => 'masked_cart_123',
+                'exception' => new \RuntimeException('An unexpected error occurred while restoring the quote.'),
             ],
         ];
     }
