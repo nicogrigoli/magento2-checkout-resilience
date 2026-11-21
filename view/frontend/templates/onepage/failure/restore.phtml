@@ -1,0 +1,29 @@
+<?php
+
+declare(strict_types=1);
+
+use Grigoli\CheckoutResilience\ViewModel\FailurePageQuoteRestore;
+use Magento\Framework\Escaper;
+use Magento\Framework\View\Element\Template;
+
+/** @var Template $block */
+/** @var Escaper $escaper */
+/** @var FailurePageQuoteRestore|null $viewModel */
+$viewModel = $block->getData('view_model');
+?>
+<?php if ($viewModel instanceof FailurePageQuoteRestore && $viewModel->canShowButton()): ?>
+    <div class="checkout-resilience-failure-restore actions-toolbar">
+        <form action="<?= $escaper->escapeUrl($viewModel->getRestoreActionUrl()) ?>"
+              method="post"
+              class="form checkout-resilience-restore-form">
+            <?= $block->getBlockHtml('formkey') ?>
+            <div class="primary">
+                <button type="submit"
+                        class="action primary checkout-resilience-restore-button"
+                        title="<?= $escaper->escapeHtmlAttr($viewModel->getButtonLabel()) ?>">
+                    <span><?= $escaper->escapeHtml($viewModel->getButtonLabel()) ?></span>
+                </button>
+            </div>
+        </form>
+    </div>
+<?php endif; ?>

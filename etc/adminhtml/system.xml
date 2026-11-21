@@ -14,6 +14,21 @@
                     <comment>Set 'Yes' for enable module in checkout</comment>
                 </field>
             </group>
+            <group id="failure_page_recovery" translate="label" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1">
+                <label>Failure Page Recovery</label>
+                <field id="enable" translate="label, comment" type="select" sortOrder="1" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Enable Failure Page Button</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Set 'Yes' to display the quote restoration button on the checkout failure page.</comment>
+                </field>
+                <field id="button_label" translate="label, comment" type="text" sortOrder="10" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Button Label</label>
+                    <comment>Custom label for the quote restoration button on the checkout failure page.</comment>
+                    <depends>
+                        <field id="enable">1</field>
+                    </depends>
+                </field>
+            </group>
         </section>
     </system>
 </config>
