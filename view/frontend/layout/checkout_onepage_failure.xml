@@ -6,7 +6,8 @@
             <block class="Magento\Framework\View\Element\Template"
                    name="checkout.resilience.failure.restore"
                    template="Grigoli_CheckoutResilience::onepage/failure/restore.phtml"
-                   after="checkout.failure">
+                   after="checkout.failure"
+                   cacheable="false">
                 <arguments>
                     <argument name="view_model" xsi:type="object">Grigoli\CheckoutResilience\ViewModel\FailurePageQuoteRestore</argument>
                 </arguments>
