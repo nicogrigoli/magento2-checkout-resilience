@@ -5,6 +5,10 @@
             <basic_settings>
                 <enable>0</enable>
             </basic_settings>
+            <failure_page_recovery>
+                <enable>0</enable>
+                <button_label>Retry Payment</button_label>
+            </failure_page_recovery>
         </checkout_resilience>
     </default>
 </config>

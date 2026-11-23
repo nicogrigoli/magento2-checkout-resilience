@@ -1,22 +1,44 @@
 ---
 name: hu-commit
-description: Classifies staged changes within an Adobe Commerce (Magento 2) context, drafts the commit message using the Conventional Commits standard in English, and automatically executes the git commit.
+description: Analyzes staged changes, detects mixed concerns for atomic commits, classifies them using Conventional Commits in English (supporting Adobe Commerce/Magento 2 and tooling/skills), and executes the git commit.
 ---
 # Conventional Commit Generator
 
-This skill analyzes locally staged code changes in an Adobe Commerce / Magento 2 project, classifies them according to the Conventional Commits standard, and automatically executes the commit.
+This skill analyzes staged changes, ensures atomic commits by separating unrelated concerns, classifies them using the Conventional Commits standard, and executes the git commit.
 
 ## When to use
 - When the user asks to "Make the commit", "Commit this", "Generate commit", or "Classify my changes".
 
 ## Execution steps
-1. **Get branch context:** Execute `git branch --show-current` in the terminal. Extract the issue ID from the branch name (e.g., if the branch is `feature/issue-1-skeleton`, extract `1`).
-2. **Read changes:** Execute `git diff --staged` in the terminal. If there are no changes in the staging area, notify the user that they must add files first (e.g., using `git add .`).
-3. **Classify and Draft:** Based on the staged changes and the **Adobe Commerce (Magento 2) architecture**, define the following elements:
-   - **Type:** `feat`, `fix`, `chore`, `refactor`, `docs`, or `test`.
-   - **Scope:** The specific module, component, or area affected within the Magento ecosystem. Examples: `setup` (for initial scaffolding), `admin` (backend UI/Config/system.xml), `api` (Service Contracts/REST), `graphql` (GraphQL schema/resolvers), `db` (InstallSchema/Declarative Schema), `ui` (UI Components/Frontend layouts), `checkout` (Checkout adjustments/JS components), `di` (Dependency Injection configs/plugins/observers).
-   - **Description:** A short, imperative sentence in **English** describing the action (e.g., "add global enable toggle").
-   - *Final format:* `type(scope): description (#ID)`
-4. **Execute Commit:** Automatically run the following command in the integrated terminal:
-   `git commit -m "type(scope): description (#ID)"`
-5. **Notify:** Confirm to the user that the commit was created successfully, display the exact commit message used, and remind them that they can use `git commit --amend` to adjust the text if necessary.
+
+1. **Inspect Staged Files (Low-Token Check):**
+   - Run `git branch --show-current` to extract the issue ID if present (e.g., `feature/issue-1-skeleton` -> `1`).
+   - Run `git diff --staged --name-status` to inspect affected file paths before reading code.
+   - If nothing is staged, notify the user to stage files first (`git add <files>`) and stop.
+
+2. **Check for Mixed Concerns (Atomic Commit Gate):**
+   - Group staged files by domain (e.g., *Magento module code* vs. *AI skills/agent configs* vs. *CI/docs*).
+   - **If all files belong to a single logical concern:** Proceed to Step 3.
+   - **If files mix unrelated concerns** (e.g., a Magento feature + an AI skill optimization):
+     - **Do NOT commit everything together.**
+     - Propose a split plan listing each suggested commit message and its corresponding files.
+     - Ask the user for confirmation to unstage and commit each group sequentially (`git reset HEAD` -> `git add <group>` -> `git commit`). Stop and wait for approval.
+
+3. **Read Minimal Diff:**
+   - Run `git diff --staged -U1 -- . ':(exclude)*lock*'` to inspect only essential code changes with minimal context (saving tokens).
+
+4. **Classify and Draft:**
+   - **Type:** `feat`, `fix`, `chore`, `refactor`, `docs`, `test`, or `perf`.
+   - **Scope:**
+     - *Magento 2:* `setup`, `admin`, `api`, `graphql`, `db`, `ui`, `checkout`, `di`, or the specific module area.
+     - *Tooling & Meta:* `skills` (AI agent skills/prompts), `ci`, `deps`, `docs`, `config`.
+   - **Description:** Short, imperative sentence in **English** (max 72 chars total).
+   - **Issue ID Rule:** Append `(#ID)` ONLY if the branch contains an issue ID **and** the changes actually belong to that issue. Omit `(#ID)` for unrelated tooling/skill tweaks.
+   - *Format:* `type(scope): description` or `type(scope): description (#ID)`
+
+5. **Execute Commit:**
+   - Run `git commit -m "<final_message>"` in the terminal.
+   - If executing a user-approved split from Step 2, unstage all (`git reset`), then stage and commit each group one by one.
+
+6. **Notify:**
+   - Confirm the commit(s) created, display the exact message(s) used, and remind the user they can run `git commit --amend` if they want to tweak the last message.
