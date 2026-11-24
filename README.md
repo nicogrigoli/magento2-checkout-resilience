@@ -27,15 +27,15 @@ A payment-method-agnostic Adobe Commerce / Magento 2 module designed to improve 
 * **Module Skeleton & Core Architecture:** Standardized Magento 2 module registration (`Grigoli_CheckoutResilience`), Composer package definition (`grigoli/module-checkout-resilience`), and strict module load sequencing (`Magento_Authorization`, `Magento_Backend`, `Magento_Checkout`, `Magento_Config`, `Magento_Quote`, `Magento_Sales`, `Magento_Store`).
 * **Global Enable/Disable Toggle:** Store-scoped administrative switch allowing merchants to enable or disable Checkout Resilience capabilities per Store View, Website, or Default Config without code deployments.
 * **Role-Based Access Control (ACL):** Dedicated ACL resource (`Grigoli_CheckoutResilience::checkout_resilience`) nested under the **Sales** permission tree to restrict configuration access to authorized administrators.
-* **Typed Configuration Service (`Model\Config`):** Strictly typed service class using `ScopeConfigInterface` to read module settings with `ScopeInterface::SCOPE_STORE` support, including global enablement, failure page recovery button enablement, and customizable button label resolution.
+* **Typed Configuration Service (`Model\Config`):** Strictly typed service class using `ScopeConfigInterface` to read module settings with `ScopeInterface::SCOPE_STORE` support, including global enablement, failure page recovery button enablement, customizable button label resolution, and post-restoration redirect destination/custom URL configuration.
 * **Frontend Checkout Configuration Injection (`Model\Checkout\ConfigProvider`):** Implements `Magento\Checkout\Model\ConfigProviderInterface` and registers into `Magento\Checkout\Model\CompositeConfigProvider` to expose `window.checkoutConfig.resilience.enabled` on the storefront checkout page.
-* **Failure Page Quote Restoration Button (`Controller\Quote\Restore`, `ViewModel\FailurePageQuoteRestore`, `view/frontend/*`):** Injects a configurable quote restoration button (`action primary`) into the `checkout_onepage_failure` layout when both global and failure-page toggles are active and a restorable order/quote exists in the checkout session. Submits a CSRF-protected (`form_key`) `POST` request to `checkout_resilience/quote/restore`, restores the active quote in session via `Magento\Checkout\Model\Session::restoreQuote()` for both guest and logged-in customers, redirects to `checkout/#payment` on success, and safely handles errors by logging details, notifying the customer via `MessageManager`, and redirecting to `checkout/cart`.
+* **Failure Page Quote Restoration Button (`Controller\Quote\Restore`, `ViewModel\FailurePageQuoteRestore`, `view/frontend/*`):** Injects a configurable quote restoration button (`action primary`) into the `checkout_onepage_failure` layout when both global and failure-page toggles are active and a restorable order/quote exists in the checkout session. Submits a CSRF-protected (`form_key`) `POST` request to `checkout_resilience/quote/restore`, restores the active quote in session via `Magento\Checkout\Model\Session::restoreQuote()` for both guest and logged-in customers, redirects to the configured post-restoration destination on success, and safely handles errors by logging details, notifying the customer via `MessageManager`, and redirecting to `checkout/cart`.
+* **Configurable Post-Restoration Redirect Destination & Open Redirect Protection (`Model\Config\Source\RedirectDestination`, `Model\Config\Backend\CustomRedirectUrl`, `Model\Resolver\RedirectUrlResolver`):** Allows administrators to configure the post-restoration redirect target per Store View (`checkout/#payment`, `checkout/#shipping`, `checkout/cart`, or a `custom` path/URL). Includes conditional Admin visibility (`<depends>`), a backend config model that validates custom paths/URLs on save, and a dedicated `RedirectUrlResolver` service that prevents Open Redirect vulnerabilities by verifying same-origin hosts via `Magento\Framework\Url\HostChecker` and safely falling back to `checkout/#payment` with a logged warning when an invalid or empty custom URL is encountered.
 * **Quote Reactivation Service (`Model\QuoteRestoreManagement`):** Centralized service that validates module enablement (`Model\Config`), input parameters, and quote ownership/state, locates and reactivates inactive quotes for both guest users (via masked cart IDs) and logged-in customers (via their most recent order), resets `is_active = 1` and `reserved_order_id = null`, persists the quote via `CartRepositoryInterface`, dispatches the `resilience_restore_quote` event, and logs unexpected errors via `Psr\Log\LoggerInterface`.
 * **Cart Recovery via REST WebAPI (`Api\*`, `Model\Data\QuoteRestoreResponse`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`):** Service contracts with documented `@throws` annotations, Data Transfer Object (`QuoteRestoreResponseInterface`), and REST endpoints (`POST /V1/guest-carts/:cartId/resilience/restore` and `POST /V1/carts/mine/resilience/restore`) returning `{"success": true}` (`200 OK`) on success and throwing native Magento framework exceptions (`InputException`, `LocalizedException`, `AuthorizationException`, `NoSuchEntityException`, `\RuntimeException`) for standardized HTTP error responses (`400`, `401`, `404`, `500`).
-* **Unit Test Coverage:** Comprehensive PHPUnit test suites covering `Model\Config`, `Model\Checkout\ConfigProvider`, `Model\Data\QuoteRestoreResponse`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`, `Model\QuoteRestoreManagement`, `ViewModel\FailurePageQuoteRestore`, and `Controller\Quote\Restore`.
+* **Unit Test Coverage:** Comprehensive PHPUnit test suites covering `Model\Config`, `Model\Config\Source\RedirectDestination`, `Model\Config\Backend\CustomRedirectUrl`, `Model\Resolver\RedirectUrlResolver`, `Model\Checkout\ConfigProvider`, `Model\Data\QuoteRestoreResponse`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`, `Model\QuoteRestoreManagement`, `ViewModel\FailurePageQuoteRestore`, and `Controller\Quote\Restore`.
 
 ### Planned Capabilities (Module Roadmap)
-* **Configurable Post-Restoration Redirect Destination:** Admin configuration allowing merchants to customize the redirect target after restoring a quote from the failure page (e.g., checkout payment step vs. cart or custom URL).
 * **Manual Payment Retries:** Customer-initiated payment retry flow on failed transactions, governed by an admin-configurable maximum retry limit (`max_manual_retries`) and feature toggle.
 * **Automated Payment Retries:** Automatic retry execution triggered by specific, configurable gateway error codes/responses, bounded by `max_automatic_retries`.
 
@@ -66,6 +66,8 @@ Store administrators with the **Sales > Checkout Resilience** ACL permission can
 5. Expand the **Failure Page Recovery** section:
    * **Enable Failure Page Button**: Select **Yes** to display the quote restoration button on `checkout/onepage/failure` when the module is enabled (Default: `No`).
    * **Button Label**: Enter a custom display label for the restoration button (Default: `Retry Payment`).
+   * **Redirect Destination**: Select where customers are redirected after restoring their quote (`Checkout Payment Step`, `Checkout Shipping Step`, `Shopping Cart`, or `Custom URL`; Default: `Checkout Payment Step`).
+   * **Custom Redirect Path / URL**: *(Visible only when **Redirect Destination** is set to **Custom URL**)* Enter an internal relative path (e.g., `checkout/cart` or `custom-recovery-page`) or a full URL matching the store's domain. External or malformed URLs are rejected on save and safely fall back to `checkout/#payment` at runtime.
 6. *(Optional)* Switch the **Scope** selector in the upper-left corner to configure the settings per **Website** or **Store View**.
 7. Click **Save Config** and flush the configuration cache when prompted.
 
@@ -76,6 +78,8 @@ Store administrators with the **Sales > Checkout Resilience** ACL permission can
 | `Sales > Checkout Resilience > Basic settings > Enabled` | `checkout_resilience/basic_settings/enable` | Default, Website, Store View | Yes/No (`boolean`) | `0` (`No`) | Master kill-switch for the `Grigoli_CheckoutResilience` module on the checkout page. |
 | `Sales > Checkout Resilience > Failure Page Recovery > Enable Failure Page Button` | `checkout_resilience/failure_page_recovery/enable` | Default, Website, Store View | Yes/No (`boolean`) | `0` (`No`) | Controls whether the quote restoration button is rendered on `checkout_onepage_failure` (requires `basic_settings/enable` to also be `1`). |
 | `Sales > Checkout Resilience > Failure Page Recovery > Button Label` | `checkout_resilience/failure_page_recovery/button_label` | Default, Website, Store View | Text (`string`) | `Retry Payment` | Display label for the failure page quote restoration button. Falls back to `Retry Payment` if left blank. |
+| `Sales > Checkout Resilience > Failure Page Recovery > Redirect Destination` | `checkout_resilience/failure_page_recovery/redirect_destination` | Default, Website, Store View | Select (`string`) | `checkout/#payment` | Destination route after a successful quote restoration from the failure page (`checkout/#payment`, `checkout/#shipping`, `checkout/cart`, or `custom`). |
+| `Sales > Checkout Resilience > Failure Page Recovery > Custom Redirect Path / URL` | `checkout_resilience/failure_page_recovery/custom_redirect_url` | Default, Website, Store View | Text (`string`) | `""` (empty) | Custom internal relative path or same-origin store URL used when `redirect_destination` is set to `custom`. Validated against Open Redirect vulnerabilities. |
 
 #### ACL Resource Reference
 
@@ -90,9 +94,14 @@ Administrators and DevOps pipelines can read or toggle the module status directl
 # Enable the module globally (Default Config scope)
 bin/magento config:set checkout_resilience/basic_settings/enable 1
 
-# Enable the failure page quote restoration button and customize its label
+# Enable the failure page quote restoration button, customize its label, and configure redirect destination
 bin/magento config:set checkout_resilience/failure_page_recovery/enable 1
 bin/magento config:set checkout_resilience/failure_page_recovery/button_label "Retry Payment"
+bin/magento config:set checkout_resilience/failure_page_recovery/redirect_destination "checkout/#payment"
+
+# Or configure a custom internal redirect path for a specific Store View
+bin/magento config:set --scope=stores --scope-code=default checkout_resilience/failure_page_recovery/redirect_destination "custom"
+bin/magento config:set --scope=stores --scope-code=default checkout_resilience/failure_page_recovery/custom_redirect_url "custom-recovery-page"
 
 # Enable the module for a specific Store View (e.g., "default")
 bin/magento config:set --scope=stores --scope-code=default checkout_resilience/basic_settings/enable 1
@@ -260,8 +269,15 @@ app/code/Grigoli/CheckoutResilience/
 │   ├── QuoteRestoreManagement.php
 │   ├── Checkout/
 │   │   └── ConfigProvider.php
-│   └── Data/
-│       └── QuoteRestoreResponse.php
+│   ├── Config/
+│   │   ├── Backend/
+│   │   │   └── CustomRedirectUrl.php
+│   │   └── Source/
+│   │       └── RedirectDestination.php
+│   ├── Data/
+│   │   └── QuoteRestoreResponse.php
+│   └── Resolver/
+│       └── RedirectUrlResolver.php
 ├── Test/
 │   └── Unit/
 │       ├── Controller/
@@ -274,8 +290,15 @@ app/code/Grigoli/CheckoutResilience/
 │       │   ├── QuoteRestoreManagementTest.php
 │       │   ├── Checkout/
 │       │   │   └── ConfigProviderTest.php
-│       │   └── Data/
-│       │       └── QuoteRestoreResponseTest.php
+│       │   ├── Config/
+│       │   │   ├── Backend/
+│       │   │   │   └── CustomRedirectUrlTest.php
+│       │   │   └── Source/
+│       │   │       └── RedirectDestinationTest.php
+│       │   ├── Data/
+│       │   │   └── QuoteRestoreResponseTest.php
+│       │   └── Resolver/
+│       │       └── RedirectUrlResolverTest.php
 │       └── ViewModel/
 │           └── FailurePageQuoteRestoreTest.php
 ├── ViewModel/
@@ -294,14 +317,14 @@ app/code/Grigoli/CheckoutResilience/
 
 * **Module Registration & Metadata (`registration.php`, `etc/module.xml`, `composer.json`):**
   Registers the `Grigoli_CheckoutResilience` component with Magento's `ComponentRegistrar` and declares load order dependencies on core modules (`Magento_Authorization`, `Magento_Backend`, `Magento_Checkout`, `Magento_Config`, `Magento_Quote`, `Magento_Sales`, `Magento_Store`).
-* **Admin System Configuration & Defaults (`etc/adminhtml/system.xml`, `etc/config.xml`):**
-  Defines the `checkout_resilience` section under the `sales` tab with `basic_settings` (`enable`) and `failure_page_recovery` (`enable`, `button_label`) groups, backed by safe default values (`0` and `Retry Payment`) in `etc/config.xml`.
+* **Admin System Configuration & Defaults (`etc/adminhtml/system.xml`, `etc/config.xml`, `Model/Config/Source/RedirectDestination.php`, `Model/Config/Backend/CustomRedirectUrl.php`):**
+  Defines the `checkout_resilience` section under the `sales` tab with `basic_settings` (`enable`) and `failure_page_recovery` (`enable`, `button_label`, `redirect_destination`, `custom_redirect_url`) groups, backed by safe default values (`0`, `Retry Payment`, and `checkout/#payment`) in `etc/config.xml`, the `RedirectDestination` option source model, and the `CustomRedirectUrl` backend validator model.
 * **Access Control List (`etc/acl.xml`):**
   Declares the `Grigoli_CheckoutResilience::checkout_resilience` ACL resource under `Magento_Sales::sales` to guard system configuration access.
 * **Configuration Reader (`Model/Config.php`):**
-  Encapsulates access to `Magento\Framework\App\Config\ScopeConfigInterface` for `checkout_resilience/basic_settings/enable`, `checkout_resilience/failure_page_recovery/enable`, and `checkout_resilience/failure_page_recovery/button_label` using `ScopeInterface::SCOPE_STORE`.
-* **Failure Page Quote Restoration UI & Controller (`etc/frontend/routes.xml`, `Controller/Quote/Restore.php`, `ViewModel/FailurePageQuoteRestore.php`, `view/frontend/layout/checkout_onepage_failure.xml`, `view/frontend/templates/onepage/failure/restore.phtml`):**
-  Renders a CSRF-protected `POST` form button on the checkout failure page via a dedicated `ViewModel` and `.phtml` template using `$escaper`, validates `form_key` and module enablement in `Controller\Quote\Restore`, restores the quote in session via `Magento\Checkout\Model\Session::restoreQuote()`, and redirects to `checkout/#payment` (or `checkout/cart` with a user-friendly error message on failure).
+  Encapsulates access to `Magento\Framework\App\Config\ScopeConfigInterface` for `checkout_resilience/basic_settings/enable`, `checkout_resilience/failure_page_recovery/enable`, `checkout_resilience/failure_page_recovery/button_label`, `checkout_resilience/failure_page_recovery/redirect_destination`, and `checkout_resilience/failure_page_recovery/custom_redirect_url` using `ScopeInterface::SCOPE_STORE`.
+* **Failure Page Quote Restoration UI, Redirect Resolver & Controller (`etc/frontend/routes.xml`, `Controller/Quote/Restore.php`, `Model/Resolver/RedirectUrlResolver.php`, `ViewModel/FailurePageQuoteRestore.php`, `view/frontend/layout/checkout_onepage_failure.xml`, `view/frontend/templates/onepage/failure/restore.phtml`):**
+  Renders a CSRF-protected `POST` form button on the checkout failure page via a dedicated `ViewModel` and `.phtml` template using `$escaper`, validates `form_key` and module enablement in `Controller\Quote\Restore`, restores the quote in session via `Magento\Checkout\Model\Session::restoreQuote()`, resolves the store-scoped destination URL via `RedirectUrlResolver` (preventing Open Redirects and falling back to `checkout/#payment` with a warning log when invalid), and redirects the customer (or redirects to `checkout/cart` with a user-friendly error message on restoration failure).
 * **Checkout Config Provider & Frontend DI (`Model/Checkout/ConfigProvider.php`, `etc/frontend/di.xml`):**
   Implements `Magento\Checkout\Model\ConfigProviderInterface` and injects `checkout_resilience_config_provider` into `Magento\Checkout\Model\CompositeConfigProvider` (`configProviders` array argument). Exports `['resilience' => ['enabled' => bool]]` to the frontend checkout configuration payload.
 * **Quote Restoration Service & Data Contracts (`Api/GuestQuoteRestoreManagementInterface.php`, `Api/MineQuoteRestoreManagementInterface.php`, `Api/Data/QuoteRestoreResponseInterface.php`, `Model/Data/QuoteRestoreResponse.php`, `etc/di.xml`, `etc/webapi.xml`):**

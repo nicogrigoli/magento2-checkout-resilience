@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Grigoli\CheckoutResilience\Model;
 
+use Grigoli\CheckoutResilience\Model\Config\Source\RedirectDestination;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Store\Model\ScopeInterface;
 
@@ -13,6 +14,7 @@ class Config
     private const GROUP_PATH_BASIC_SETTING = 'basic_settings/';
     private const GROUP_PATH_FAILURE_PAGE_RECOVERY = 'failure_page_recovery/';
     private const DEFAULT_FAILURE_PAGE_BUTTON_LABEL = 'Retry Payment';
+    private const DEFAULT_FAILURE_PAGE_REDIRECT_DESTINATION = RedirectDestination::DESTINATION_CHECKOUT_PAYMENT;
 
     /**
      * Constructor
@@ -75,5 +77,44 @@ class Config
         $trimmedLabel = trim($label);
 
         return $trimmedLabel !== '' ? $trimmedLabel : self::DEFAULT_FAILURE_PAGE_BUTTON_LABEL;
+    }
+
+    /**
+     * Get the configured post-restoration redirect destination option.
+     *
+     * Falls back to "checkout/#payment" if the configuration value is empty.
+     *
+     * @param ?string $scopeCode
+     * @return string
+     */
+    public function getFailurePageRedirectDestination(?string $scopeCode = null): string
+    {
+        $destination = (string) $this->scopeConfig->getValue(
+            self::BASE_PATH . self::GROUP_PATH_FAILURE_PAGE_RECOVERY . 'redirect_destination',
+            ScopeInterface::SCOPE_STORE,
+            $scopeCode
+        );
+        $trimmedDestination = trim($destination);
+
+        return $trimmedDestination !== ''
+            ? $trimmedDestination
+            : self::DEFAULT_FAILURE_PAGE_REDIRECT_DESTINATION;
+    }
+
+    /**
+     * Get the configured custom redirect path or URL for failure page quote restoration.
+     *
+     * @param ?string $scopeCode
+     * @return string
+     */
+    public function getFailurePageCustomRedirectUrl(?string $scopeCode = null): string
+    {
+        $customUrl = (string) $this->scopeConfig->getValue(
+            self::BASE_PATH . self::GROUP_PATH_FAILURE_PAGE_RECOVERY . 'custom_redirect_url',
+            ScopeInterface::SCOPE_STORE,
+            $scopeCode
+        );
+
+        return trim($customUrl);
     }
 }
