@@ -8,6 +8,8 @@
             <failure_page_recovery>
                 <enable>0</enable>
                 <button_label>Retry Payment</button_label>
+                <redirect_destination>checkout/#payment</redirect_destination>
+                <custom_redirect_url/>
             </failure_page_recovery>
         </checkout_resilience>
     </default>

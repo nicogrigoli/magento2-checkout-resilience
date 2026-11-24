@@ -28,6 +28,23 @@
                         <field id="enable">1</field>
                     </depends>
                 </field>
+                <field id="redirect_destination" translate="label, comment" type="select" sortOrder="20" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Redirect Destination</label>
+                    <source_model>Grigoli\CheckoutResilience\Model\Config\Source\RedirectDestination</source_model>
+                    <comment>Select where customers are redirected after restoring their quote from the failure page.</comment>
+                    <depends>
+                        <field id="enable">1</field>
+                    </depends>
+                </field>
+                <field id="custom_redirect_url" translate="label, comment" type="text" sortOrder="30" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Custom Redirect Path / URL</label>
+                    <backend_model>Grigoli\CheckoutResilience\Model\Config\Backend\CustomRedirectUrl</backend_model>
+                    <comment>Enter an internal relative path (e.g., checkout/cart or custom-recovery-page) or a URL matching the store's domain.</comment>
+                    <depends>
+                        <field id="enable">1</field>
+                        <field id="redirect_destination">custom</field>
+                    </depends>
+                </field>
             </group>
         </section>
     </system>

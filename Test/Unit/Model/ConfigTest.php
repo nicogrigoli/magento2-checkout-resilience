@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Grigoli\CheckoutResilience\Test\Unit\Model;
 
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Config\Source\RedirectDestination;
 use Magento\Framework\App\Config\ScopeConfigInterface;
 use Magento\Store\Model\ScopeInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -16,6 +17,10 @@ class ConfigTest extends TestCase
     private const XML_PATH_ENABLED = 'checkout_resilience/basic_settings/enable';
     private const XML_PATH_FAILURE_PAGE_BUTTON_ENABLED = 'checkout_resilience/failure_page_recovery/enable';
     private const XML_PATH_FAILURE_PAGE_BUTTON_LABEL = 'checkout_resilience/failure_page_recovery/button_label';
+    private const XML_PATH_FAILURE_PAGE_REDIRECT_DESTINATION =
+        'checkout_resilience/failure_page_recovery/redirect_destination';
+    private const XML_PATH_FAILURE_PAGE_CUSTOM_REDIRECT_URL =
+        'checkout_resilience/failure_page_recovery/custom_redirect_url';
 
     /**
      * @var ScopeConfigInterface&MockObject
@@ -212,6 +217,123 @@ class ConfigTest extends TestCase
                 'scopeCode' => 'default',
                 'configuredValue' => '   ',
                 'expectedLabel' => 'Retry Payment',
+            ],
+        ];
+    }
+
+    #[DataProvider('failurePageRedirectDestinationDataProvider')]
+    public function testGetFailurePageRedirectDestination(
+        ?string $scopeCode,
+        ?string $configuredValue,
+        string $expectedDestination
+    ): void {
+        $this->scopeConfigMock->expects($this->once())
+            ->method('getValue')
+            ->with(
+                self::XML_PATH_FAILURE_PAGE_REDIRECT_DESTINATION,
+                ScopeInterface::SCOPE_STORE,
+                $scopeCode
+            )
+            ->willReturn($configuredValue);
+
+        $result = $scopeCode === null
+            ? $this->config->getFailurePageRedirectDestination()
+            : $this->config->getFailurePageRedirectDestination($scopeCode);
+
+        $this->assertSame($expectedDestination, $result);
+    }
+
+    /**
+     * @return array<string, array{scopeCode: ?string, configuredValue: ?string, expectedDestination: string}>
+     */
+    public static function failurePageRedirectDestinationDataProvider(): array
+    {
+        return [
+            'configured payment step (null scope)' => [
+                'scopeCode' => null,
+                'configuredValue' => RedirectDestination::DESTINATION_CHECKOUT_PAYMENT,
+                'expectedDestination' => RedirectDestination::DESTINATION_CHECKOUT_PAYMENT,
+            ],
+            'configured shipping step (specific scope)' => [
+                'scopeCode' => 'default',
+                'configuredValue' => RedirectDestination::DESTINATION_CHECKOUT_SHIPPING,
+                'expectedDestination' => RedirectDestination::DESTINATION_CHECKOUT_SHIPPING,
+            ],
+            'configured shopping cart with whitespace' => [
+                'scopeCode' => 'store_es',
+                'configuredValue' => '  checkout/cart  ',
+                'expectedDestination' => RedirectDestination::DESTINATION_CHECKOUT_CART,
+            ],
+            'configured custom destination' => [
+                'scopeCode' => null,
+                'configuredValue' => RedirectDestination::DESTINATION_CUSTOM,
+                'expectedDestination' => RedirectDestination::DESTINATION_CUSTOM,
+            ],
+            'null configured value falls back to default payment step' => [
+                'scopeCode' => null,
+                'configuredValue' => null,
+                'expectedDestination' => RedirectDestination::DESTINATION_CHECKOUT_PAYMENT,
+            ],
+            'empty string falls back to default payment step' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '',
+                'expectedDestination' => RedirectDestination::DESTINATION_CHECKOUT_PAYMENT,
+            ],
+            'whitespace-only string falls back to default payment step' => [
+                'scopeCode' => null,
+                'configuredValue' => '   ',
+                'expectedDestination' => RedirectDestination::DESTINATION_CHECKOUT_PAYMENT,
+            ],
+        ];
+    }
+
+    #[DataProvider('failurePageCustomRedirectUrlDataProvider')]
+    public function testGetFailurePageCustomRedirectUrl(
+        ?string $scopeCode,
+        ?string $configuredValue,
+        string $expectedUrl
+    ): void {
+        $this->scopeConfigMock->expects($this->once())
+            ->method('getValue')
+            ->with(
+                self::XML_PATH_FAILURE_PAGE_CUSTOM_REDIRECT_URL,
+                ScopeInterface::SCOPE_STORE,
+                $scopeCode
+            )
+            ->willReturn($configuredValue);
+
+        $result = $scopeCode === null
+            ? $this->config->getFailurePageCustomRedirectUrl()
+            : $this->config->getFailurePageCustomRedirectUrl($scopeCode);
+
+        $this->assertSame($expectedUrl, $result);
+    }
+
+    /**
+     * @return array<string, array{scopeCode: ?string, configuredValue: ?string, expectedUrl: string}>
+     */
+    public static function failurePageCustomRedirectUrlDataProvider(): array
+    {
+        return [
+            'configured custom relative path (null scope)' => [
+                'scopeCode' => null,
+                'configuredValue' => 'custom-recovery-page',
+                'expectedUrl' => 'custom-recovery-page',
+            ],
+            'configured custom path with whitespace (specific scope)' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '  /checkout/cart?retry=1  ',
+                'expectedUrl' => '/checkout/cart?retry=1',
+            ],
+            'null configured value returns empty string' => [
+                'scopeCode' => null,
+                'configuredValue' => null,
+                'expectedUrl' => '',
+            ],
+            'whitespace-only value returns empty string' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '   ',
+                'expectedUrl' => '',
             ],
         ];
     }

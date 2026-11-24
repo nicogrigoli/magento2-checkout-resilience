@@ -6,6 +6,7 @@ namespace Grigoli\CheckoutResilience\Test\Unit\Controller\Quote;
 
 use Grigoli\CheckoutResilience\Controller\Quote\Restore;
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\Redirect;
@@ -56,6 +57,11 @@ class RestoreTest extends TestCase
     private Config $configMock;
 
     /**
+     * @var RedirectUrlResolver&MockObject
+     */
+    private RedirectUrlResolver $redirectUrlResolverMock;
+
+    /**
      * @var LoggerInterface&MockObject
      */
     private LoggerInterface $loggerMock;
@@ -74,6 +80,7 @@ class RestoreTest extends TestCase
         $this->resultRedirectMock = $this->createMock(Redirect::class);
         $this->messageManagerMock = $this->createMock(ManagerInterface::class);
         $this->configMock = $this->createMock(Config::class);
+        $this->redirectUrlResolverMock = $this->createMock(RedirectUrlResolver::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
 
         $this->resultRedirectFactoryMock->method('create')
@@ -86,12 +93,15 @@ class RestoreTest extends TestCase
             $this->resultRedirectFactoryMock,
             $this->messageManagerMock,
             $this->configMock,
+            $this->redirectUrlResolverMock,
             $this->loggerMock
         );
     }
 
-    public function testExecuteRedirectsToCheckoutPaymentOnSuccess(): void
+    public function testExecuteRedirectsToResolvedDestinationUrlOnSuccess(): void
     {
+        $resolvedUrl = 'https://example.test/checkout/#payment';
+
         $this->formKeyValidatorMock->expects($this->once())
             ->method('validate')
             ->with($this->requestMock)
@@ -105,12 +115,16 @@ class RestoreTest extends TestCase
             ->method('restoreQuote')
             ->willReturn(true);
 
+        $this->redirectUrlResolverMock->expects($this->once())
+            ->method('resolve')
+            ->willReturn($resolvedUrl);
+
         $this->messageManagerMock->expects($this->never())
             ->method('addErrorMessage');
 
         $this->resultRedirectMock->expects($this->once())
-            ->method('setPath')
-            ->with('checkout', ['_fragment' => 'payment'])
+            ->method('setUrl')
+            ->with($resolvedUrl)
             ->willReturnSelf();
 
         $this->assertSame($this->resultRedirectMock, $this->controller->execute());

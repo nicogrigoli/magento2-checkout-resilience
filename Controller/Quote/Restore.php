@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Grigoli\CheckoutResilience\Controller\Quote;
 
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\Action\HttpPostActionInterface;
 use Magento\Framework\App\RequestInterface;
@@ -16,7 +17,7 @@ use Psr\Log\LoggerInterface;
 
 /**
  * Frontend POST controller that restores the customer's quote from the checkout failure page
- * and redirects to the checkout payment step.
+ * and redirects to the configured post-restoration destination.
  */
 class Restore implements HttpPostActionInterface
 {
@@ -29,6 +30,7 @@ class Restore implements HttpPostActionInterface
      * @param RedirectFactory $resultRedirectFactory
      * @param ManagerInterface $messageManager
      * @param Config $config
+     * @param RedirectUrlResolver $redirectUrlResolver
      * @param LoggerInterface $logger
      */
     public function __construct(
@@ -38,6 +40,7 @@ class Restore implements HttpPostActionInterface
         private readonly RedirectFactory $resultRedirectFactory,
         private readonly ManagerInterface $messageManager,
         private readonly Config $config,
+        private readonly RedirectUrlResolver $redirectUrlResolver,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -67,7 +70,7 @@ class Restore implements HttpPostActionInterface
 
         try {
             if ($this->checkoutSession->restoreQuote()) {
-                return $resultRedirect->setPath('checkout', ['_fragment' => 'payment']);
+                return $resultRedirect->setUrl($this->redirectUrlResolver->resolve());
             }
 
             $this->logger->warning(
