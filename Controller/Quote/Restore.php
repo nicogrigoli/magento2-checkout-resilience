@@ -6,13 +6,18 @@ namespace Grigoli\CheckoutResilience\Controller\Quote;
 
 use Grigoli\CheckoutResilience\Model\Config;
 use Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver;
+use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\Action\HttpPostActionInterface;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\Redirect;
 use Magento\Framework\Controller\Result\RedirectFactory;
 use Magento\Framework\Data\Form\FormKey\Validator as FormKeyValidator;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\Message\ManagerInterface;
+use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\Quote\Model\Quote;
+use Magento\Sales\Api\Data\OrderInterface;
 use Psr\Log\LoggerInterface;
 
 /**
@@ -31,6 +36,8 @@ class Restore implements HttpPostActionInterface
      * @param ManagerInterface $messageManager
      * @param Config $config
      * @param RedirectUrlResolver $redirectUrlResolver
+     * @param OrderEligibilityValidator $orderEligibilityValidator
+     * @param CartRepositoryInterface $cartRepository
      * @param LoggerInterface $logger
      */
     public function __construct(
@@ -41,6 +48,8 @@ class Restore implements HttpPostActionInterface
         private readonly ManagerInterface $messageManager,
         private readonly Config $config,
         private readonly RedirectUrlResolver $redirectUrlResolver,
+        private readonly OrderEligibilityValidator $orderEligibilityValidator,
+        private readonly CartRepositoryInterface $cartRepository,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -69,7 +78,15 @@ class Restore implements HttpPostActionInterface
         }
 
         try {
-            if ($this->checkoutSession->restoreQuote()) {
+            $lastOrder = $this->checkoutSession->getLastRealOrder();
+            if (!$this->orderEligibilityValidator->isEligible($lastOrder)) {
+                $this->messageManager->addErrorMessage(
+                    __('We could not restore your cart. Please add your items again.')
+                );
+                return $resultRedirect->setPath('checkout/cart');
+            }
+
+            if ($this->restoreSessionQuote($lastOrder)) {
                 return $resultRedirect->setUrl($this->redirectUrlResolver->resolve());
             }
 
@@ -90,5 +107,40 @@ class Restore implements HttpPostActionInterface
         }
 
         return $resultRedirect->setPath('checkout/cart');
+    }
+
+    /**
+     * Restore the quote in session via the last real order, or directly by last quote ID when no order was created.
+     *
+     * @param OrderInterface|null $lastOrder
+     * @return bool
+     */
+    private function restoreSessionQuote(?OrderInterface $lastOrder): bool
+    {
+        if ($this->checkoutSession->restoreQuote()) {
+            return true;
+        }
+
+        $hasAssociatedOrder = $lastOrder !== null
+            && ((bool) $lastOrder->getEntityId() || (bool) $lastOrder->getIncrementId());
+        $lastQuoteId = (int) $this->checkoutSession->getLastQuoteId();
+        if ($hasAssociatedOrder || $lastQuoteId <= 0) {
+            return false;
+        }
+
+        try {
+            /** @var Quote $quote */
+            $quote = $this->cartRepository->get($lastQuoteId);
+            $quote->setIsActive(1)->setReservedOrderId(null);
+            $this->cartRepository->save($quote);
+            $this->checkoutSession->replaceQuote($quote);
+
+            return true;
+        } catch (NoSuchEntityException $e) {
+            $this->logger->warning(
+                sprintf('Unable to restore quote ID %d from checkout session: %s', $lastQuoteId, $e->getMessage())
+            );
+            return false;
+        }
     }
 }

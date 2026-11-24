@@ -6,6 +6,7 @@ namespace Grigoli\CheckoutResilience\Test\Unit\Model;
 
 use Grigoli\CheckoutResilience\Model\Config;
 use Grigoli\CheckoutResilience\Model\QuoteRestoreManagement;
+use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Authorization\Model\UserContextInterface;
 use Magento\Framework\Api\SearchCriteria;
 use Magento\Framework\Api\SearchCriteriaBuilder;
@@ -113,6 +114,7 @@ class QuoteRestoreManagementTest extends TestCase
             $this->searchCriteriaBuilderMock,
             $this->sortOrderBuilderMock,
             $this->configMock,
+            new OrderEligibilityValidator($this->loggerMock),
             $this->loggerMock
         );
     }
@@ -341,6 +343,77 @@ class QuoteRestoreManagementTest extends TestCase
     }
 
     /**
+     * Test logged-in quote restoration throws LocalizedException when associated order is ineligible (400).
+     *
+     * @return void
+     */
+    public function testRestoreLoggedUserQuoteThrowsLocalizedExceptionWhenOrderIsNotEligible(): void
+    {
+        $customerId = 10;
+        $quoteId = 42;
+        $quoteMock = $this->createQuoteMock($customerId, false);
+
+        $this->configMock->expects($this->once())
+            ->method('getEnabled')
+            ->willReturn(true);
+
+        $this->userContextMock->expects($this->once())
+            ->method('getUserId')
+            ->willReturn($customerId);
+
+        $this->mockCustomerLastOrderSearch($customerId, $quoteId, true, 'processing');
+
+        $this->cartRepositoryMock->expects($this->once())
+            ->method('get')
+            ->with($quoteId)
+            ->willReturn($quoteMock);
+
+        $this->cartRepositoryMock->expects($this->never())
+            ->method('save');
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('The order associated with this quote is not eligible for restoration.');
+
+        $this->quoteRestoreManagement->restoreLoggedUserQuote();
+    }
+
+    /**
+     * Test guest quote restoration throws LocalizedException when associated order is ineligible (400).
+     *
+     * @return void
+     */
+    public function testRestoreGuestUserQuoteThrowsLocalizedExceptionWhenOrderIsNotEligible(): void
+    {
+        $maskedCartId = 'masked_cart_123';
+        $quoteId = 99;
+        $quoteMock = $this->createQuoteMock(null, false);
+
+        $this->configMock->expects($this->once())
+            ->method('getEnabled')
+            ->willReturn(true);
+
+        $this->maskedQuoteIdToQuoteIdMock->expects($this->once())
+            ->method('execute')
+            ->with($maskedCartId)
+            ->willReturn($quoteId);
+
+        $this->cartRepositoryMock->expects($this->once())
+            ->method('get')
+            ->with($quoteId)
+            ->willReturn($quoteMock);
+
+        $this->mockLastOrderSearchByField('quote_id', $quoteId, $quoteId, true, 'complete');
+
+        $this->cartRepositoryMock->expects($this->never())
+            ->method('save');
+
+        $this->expectException(LocalizedException::class);
+        $this->expectExceptionMessage('The order associated with this quote is not eligible for restoration.');
+
+        $this->quoteRestoreManagement->restoreGuestUserQuote($maskedCartId);
+    }
+
+    /**
      * Test logged-in quote restoration logs and throws generic RuntimeException on unexpected order lookup error (500).
      *
      * @return void
@@ -450,6 +523,8 @@ class QuoteRestoreManagementTest extends TestCase
             ->method('get')
             ->with($quoteId)
             ->willReturn($quoteMock);
+
+        $this->mockLastOrderSearchByField('quote_id', $quoteId, null, false);
 
         $quoteMock->expects($this->once())
             ->method('setIsActive')
@@ -675,6 +750,8 @@ class QuoteRestoreManagementTest extends TestCase
             ->with($quoteId)
             ->willReturn($quoteMock);
 
+        $this->mockLastOrderSearchByField('quote_id', $quoteId, null, false);
+
         $quoteMock->expects($this->once())
             ->method('setIsActive')
             ->with(1)
@@ -757,6 +834,8 @@ class QuoteRestoreManagementTest extends TestCase
             ->with($quoteId)
             ->willReturn($quoteMock);
 
+        $this->mockLastOrderSearchByField('quote_id', $quoteId, null, false);
+
         $quoteMock->expects($this->once())
             ->method('setIsActive')
             ->with(1)
@@ -813,10 +892,35 @@ class QuoteRestoreManagementTest extends TestCase
      * @param int $customerId
      * @param int|null $quoteId
      * @param bool $hasOrder
+     * @param string|null $orderState
      * @return void
      */
-    private function mockCustomerLastOrderSearch(int $customerId, ?int $quoteId, bool $hasOrder = true): void
-    {
+    private function mockCustomerLastOrderSearch(
+        int $customerId,
+        ?int $quoteId,
+        bool $hasOrder = true,
+        ?string $orderState = null
+    ): void {
+        $this->mockLastOrderSearchByField('customer_id', $customerId, $quoteId, $hasOrder, $orderState);
+    }
+
+    /**
+     * Configure mocks for searching the last order by a given field and value.
+     *
+     * @param string $field
+     * @param int|string $value
+     * @param int|null $quoteId
+     * @param bool $hasOrder
+     * @param string|null $orderState
+     * @return void
+     */
+    private function mockLastOrderSearchByField(
+        string $field,
+        int|string $value,
+        ?int $quoteId,
+        bool $hasOrder = true,
+        ?string $orderState = null
+    ): void {
         $sortOrderMock = $this->createStub(SortOrder::class);
         $searchCriteriaMock = $this->createStub(SearchCriteria::class);
         $orderSearchResultMock = $this->createMock(OrderSearchResultInterface::class);
@@ -836,7 +940,7 @@ class QuoteRestoreManagementTest extends TestCase
 
         $this->searchCriteriaBuilderMock->expects($this->once())
             ->method('addFilter')
-            ->with('customer_id', $customerId)
+            ->with($field, $value)
             ->willReturnSelf();
 
         $this->searchCriteriaBuilderMock->expects($this->once())
@@ -856,9 +960,8 @@ class QuoteRestoreManagementTest extends TestCase
         $items = [];
         if ($hasOrder) {
             $orderMock = $this->createMock(OrderInterface::class);
-            $orderMock->expects($this->once())
-                ->method('getQuoteId')
-                ->willReturn($quoteId);
+            $orderMock->method('getQuoteId')->willReturn($quoteId);
+            $orderMock->method('getState')->willReturn($orderState);
             $items = [$orderMock];
         }
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Grigoli\CheckoutResilience\ViewModel;
 
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\UrlInterface;
 use Magento\Framework\View\Element\Block\ArgumentInterface;
@@ -22,11 +23,13 @@ class FailurePageQuoteRestore implements ArgumentInterface
      * @param Config $config
      * @param CheckoutSession $checkoutSession
      * @param UrlInterface $urlBuilder
+     * @param OrderEligibilityValidator $orderEligibilityValidator
      */
     public function __construct(
         private readonly Config $config,
         private readonly CheckoutSession $checkoutSession,
-        private readonly UrlInterface $urlBuilder
+        private readonly UrlInterface $urlBuilder,
+        private readonly OrderEligibilityValidator $orderEligibilityValidator
     ) {
     }
 
@@ -37,9 +40,15 @@ class FailurePageQuoteRestore implements ArgumentInterface
      */
     public function canShowButton(): bool
     {
-        return $this->config->isFailurePageButtonEnabled()
-            && (bool) $this->checkoutSession->getLastQuoteId()
-            && (bool) $this->checkoutSession->getLastRealOrderId();
+        if (!$this->config->isFailurePageButtonEnabled()
+            || !(bool) $this->checkoutSession->getLastQuoteId()
+        ) {
+            return false;
+        }
+
+        return $this->orderEligibilityValidator->isEligible(
+            $this->checkoutSession->getLastRealOrder()
+        );
     }
 
     /**

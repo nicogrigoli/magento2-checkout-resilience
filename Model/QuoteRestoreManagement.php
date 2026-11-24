@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Grigoli\CheckoutResilience\Model;
 
+use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Authorization\Model\UserContextInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
 use Magento\Framework\Api\SortOrderBuilder;
@@ -15,6 +16,7 @@ use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Quote\Api\CartRepositoryInterface;
 use Magento\Quote\Model\MaskedQuoteIdToQuoteIdInterface;
 use Magento\Quote\Model\Quote;
+use Magento\Sales\Api\Data\OrderInterface;
 use Magento\Sales\Api\OrderRepositoryInterface;
 use Psr\Log\LoggerInterface;
 
@@ -36,7 +38,9 @@ class QuoteRestoreManagement
      * @param SearchCriteriaBuilder $searchCriteriaBuilder
      * @param SortOrderBuilder $sortOrderBuilder
      * @param Config $config
+     * @param OrderEligibilityValidator $orderEligibilityValidator
      * @param LoggerInterface $logger
+     * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
         private readonly CartRepositoryInterface $cartRepository,
@@ -47,6 +51,7 @@ class QuoteRestoreManagement
         private readonly SearchCriteriaBuilder $searchCriteriaBuilder,
         private readonly SortOrderBuilder $sortOrderBuilder,
         private readonly Config $config,
+        private readonly OrderEligibilityValidator $orderEligibilityValidator,
         private readonly LoggerInterface $logger
     ) {
     }
@@ -71,13 +76,22 @@ class QuoteRestoreManagement
             );
         }
 
-        $quote = $this->getLoggedUserQuote($customerId);
+        $lastOrder = $this->getLastOrderByCustomerId($customerId);
+        $quoteId = $lastOrder ? (int) $lastOrder->getQuoteId() : 0;
+        if (!$quoteId) {
+            throw new NoSuchEntityException(
+                __('No quote found for customer ID "%customerId".', ['customerId' => $customerId])
+            );
+        }
+
+        $quote = $this->getQuoteById($quoteId);
         if ((int) $quote->getCustomerId() !== $customerId) {
             throw new AuthorizationException(
                 __('The current customer is not authorized to restore this quote.')
             );
         }
 
+        $this->validateOrderEligibility($lastOrder);
         $this->validateQuoteCanBeRestored($quote);
 
         return $this->processQuoteRestoration($quote);
@@ -99,7 +113,8 @@ class QuoteRestoreManagement
         $this->validateCartId($cartId);
         $this->validateModuleEnabled();
 
-        $quote = $this->getGuestUserQuote($cartId);
+        $quoteId = $this->resolveGuestQuoteId($cartId);
+        $quote = $this->getQuoteById($quoteId);
         if ((int) $quote->getCustomerId() > 0) {
             throw new AuthorizationException(
                 __('The guest user is not authorized to restore a customer quote.')
@@ -107,6 +122,8 @@ class QuoteRestoreManagement
         }
 
         $this->validateQuoteCanBeRestored($quote);
+        $lastOrder = $this->getLastOrderByQuoteId($quoteId);
+        $this->validateOrderEligibility($lastOrder);
 
         return $this->processQuoteRestoration($quote);
     }
@@ -157,6 +174,22 @@ class QuoteRestoreManagement
     }
 
     /**
+     * Validate that the associated order (if any) is in an eligible state for quote restoration.
+     *
+     * @param OrderInterface|null $order
+     * @return void
+     * @throws LocalizedException
+     */
+    private function validateOrderEligibility(?OrderInterface $order): void
+    {
+        if (!$this->orderEligibilityValidator->isEligible($order)) {
+            throw new LocalizedException(
+                __('The order associated with this quote is not eligible for restoration.')
+            );
+        }
+    }
+
+    /**
      * Reactivate the quote, clear its reserved order ID, and dispatch restoration event.
      *
      * @param Quote $quote
@@ -181,43 +214,22 @@ class QuoteRestoreManagement
     }
 
     /**
-     * Retrieve a guest user quote by masked cart ID.
+     * Resolve a guest user's numeric quote ID from a masked cart ID.
      *
      * @param string $cartId
-     * @return Quote
+     * @return int
      * @throws NoSuchEntityException
      * @throws \RuntimeException
      */
-    private function getGuestUserQuote(string $cartId): Quote
+    private function resolveGuestQuoteId(string $cartId): int
     {
         try {
-            $quoteId = $this->maskedQuoteIdToQuoteId->execute($cartId);
-            return $this->getQuoteById($quoteId);
+            return (int) $this->maskedQuoteIdToQuoteId->execute($cartId);
         } catch (NoSuchEntityException $e) {
             throw $e;
         } catch (\Throwable $e) {
             $this->handleUnexpectedException($e);
         }
-    }
-
-    /**
-     * Retrieve the last quote associated with the given customer ID.
-     *
-     * @param int $customerId
-     * @return Quote
-     * @throws NoSuchEntityException
-     * @throws \RuntimeException
-     */
-    private function getLoggedUserQuote(int $customerId): Quote
-    {
-        $quoteId = $this->getLastQuoteIdByCustomerId($customerId);
-        if (!$quoteId) {
-            throw new NoSuchEntityException(
-                __('No quote found for customer ID "%customerId".', ['customerId' => $customerId])
-            );
-        }
-
-        return $this->getQuoteById($quoteId);
     }
 
     /**
@@ -242,30 +254,53 @@ class QuoteRestoreManagement
     }
 
     /**
-     * Retrieve the quote ID from the most recent order of a given customer.
+     * Retrieve the most recent order of a given customer.
      *
      * @param int $customerId
-     * @return int|null
+     * @return OrderInterface|null
      * @throws \RuntimeException
      */
-    private function getLastQuoteIdByCustomerId(int $customerId): ?int
+    private function getLastOrderByCustomerId(int $customerId): ?OrderInterface
+    {
+        return $this->findLastOrderByField('customer_id', $customerId);
+    }
+
+    /**
+     * Retrieve the most recent order associated with a given quote ID, if any.
+     *
+     * @param int $quoteId
+     * @return OrderInterface|null
+     * @throws \RuntimeException
+     */
+    private function getLastOrderByQuoteId(int $quoteId): ?OrderInterface
+    {
+        return $this->findLastOrderByField('quote_id', $quoteId);
+    }
+
+    /**
+     * Find the most recent order matching a specific field and value.
+     *
+     * @param string $field
+     * @param int|string $value
+     * @return OrderInterface|null
+     * @throws \RuntimeException
+     */
+    private function findLastOrderByField(string $field, int|string $value): ?OrderInterface
     {
         try {
-            $sortOrder = $this->sortOrderBuilder
-                ->setField('entity_id')
-                ->setDescendingDirection()
-                ->create();
+            $this->sortOrderBuilder->setField('entity_id');
+            $this->sortOrderBuilder->setDescendingDirection();
+            $sortOrder = $this->sortOrderBuilder->create();
 
-            $searchCriteria = $this->searchCriteriaBuilder
-                ->addFilter('customer_id', $customerId)
-                ->addSortOrder($sortOrder)
-                ->setPageSize(1)
-                ->create();
+            $this->searchCriteriaBuilder->addFilter($field, $value);
+            $this->searchCriteriaBuilder->addSortOrder($sortOrder);
+            $this->searchCriteriaBuilder->setPageSize(1);
+            $searchCriteria = $this->searchCriteriaBuilder->create();
 
             $orders = $this->orderRepository->getList($searchCriteria)->getItems();
             $lastOrder = reset($orders);
 
-            return $lastOrder ? (int) $lastOrder->getQuoteId() : null;
+            return $lastOrder ?: null;
         } catch (\Throwable $e) {
             $this->handleUnexpectedException($e);
         }

@@ -7,17 +7,27 @@ namespace Grigoli\CheckoutResilience\Test\Unit\Controller\Quote;
 use Grigoli\CheckoutResilience\Controller\Quote\Restore;
 use Grigoli\CheckoutResilience\Model\Config;
 use Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver;
+use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\App\RequestInterface;
 use Magento\Framework\Controller\Result\Redirect;
 use Magento\Framework\Controller\Result\RedirectFactory;
 use Magento\Framework\Data\Form\FormKey\Validator as FormKeyValidator;
+use Magento\Framework\Exception\NoSuchEntityException;
 use Magento\Framework\Message\ManagerInterface;
+use Magento\Quote\Api\CartRepositoryInterface;
+use Magento\Quote\Model\Quote;
+use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 
+/**
+ * Unit tests for failure page quote restoration POST controller.
+ *
+ * @SuppressWarnings(PHPMD.CouplingBetweenObjects)
+ */
 #[AllowMockObjectsWithoutExpectations]
 class RestoreTest extends TestCase
 {
@@ -62,6 +72,16 @@ class RestoreTest extends TestCase
     private RedirectUrlResolver $redirectUrlResolverMock;
 
     /**
+     * @var OrderEligibilityValidator&MockObject
+     */
+    private OrderEligibilityValidator $orderEligibilityValidatorMock;
+
+    /**
+     * @var CartRepositoryInterface&MockObject
+     */
+    private CartRepositoryInterface $cartRepositoryMock;
+
+    /**
      * @var LoggerInterface&MockObject
      */
     private LoggerInterface $loggerMock;
@@ -81,6 +101,8 @@ class RestoreTest extends TestCase
         $this->messageManagerMock = $this->createMock(ManagerInterface::class);
         $this->configMock = $this->createMock(Config::class);
         $this->redirectUrlResolverMock = $this->createMock(RedirectUrlResolver::class);
+        $this->orderEligibilityValidatorMock = $this->createMock(OrderEligibilityValidator::class);
+        $this->cartRepositoryMock = $this->createMock(CartRepositoryInterface::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
 
         $this->resultRedirectFactoryMock->method('create')
@@ -94,6 +116,8 @@ class RestoreTest extends TestCase
             $this->messageManagerMock,
             $this->configMock,
             $this->redirectUrlResolverMock,
+            $this->orderEligibilityValidatorMock,
+            $this->cartRepositoryMock,
             $this->loggerMock
         );
     }
@@ -101,6 +125,7 @@ class RestoreTest extends TestCase
     public function testExecuteRedirectsToResolvedDestinationUrlOnSuccess(): void
     {
         $resolvedUrl = 'https://example.test/checkout/#payment';
+        $orderMock = $this->createMock(Order::class);
 
         $this->formKeyValidatorMock->expects($this->once())
             ->method('validate')
@@ -109,6 +134,15 @@ class RestoreTest extends TestCase
 
         $this->configMock->expects($this->once())
             ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('getLastRealOrder')
+            ->willReturn($orderMock);
+
+        $this->orderEligibilityValidatorMock->expects($this->once())
+            ->method('isEligible')
+            ->with($orderMock)
             ->willReturn(true);
 
         $this->checkoutSessionMock->expects($this->once())
@@ -125,6 +159,114 @@ class RestoreTest extends TestCase
         $this->resultRedirectMock->expects($this->once())
             ->method('setUrl')
             ->with($resolvedUrl)
+            ->willReturnSelf();
+
+        $this->assertSame($this->resultRedirectMock, $this->controller->execute());
+    }
+
+    public function testExecuteRestoresQuoteByLastQuoteIdWhenNoAssociatedOrderWasCreated(): void
+    {
+        $resolvedUrl = 'https://example.test/checkout/#payment';
+        $emptyOrderMock = $this->createMock(Order::class);
+        $emptyOrderMock->method('getEntityId')->willReturn(null);
+        $emptyOrderMock->method('getIncrementId')->willReturn(null);
+        $quoteMock = $this->createMock(Quote::class);
+
+        $this->formKeyValidatorMock->expects($this->once())
+            ->method('validate')
+            ->with($this->requestMock)
+            ->willReturn(true);
+
+        $this->configMock->expects($this->once())
+            ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('getLastRealOrder')
+            ->willReturn($emptyOrderMock);
+
+        $this->orderEligibilityValidatorMock->expects($this->once())
+            ->method('isEligible')
+            ->with($emptyOrderMock)
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('restoreQuote')
+            ->willReturn(false);
+
+        $this->checkoutSessionMock->method('__call')
+            ->willReturnCallback(
+                static fn (string $method): ?int => $method === 'getLastQuoteId' ? 42 : null
+            );
+
+        $this->cartRepositoryMock->expects($this->once())
+            ->method('get')
+            ->with(42)
+            ->willReturn($quoteMock);
+
+        $quoteMock->expects($this->once())
+            ->method('setIsActive')
+            ->with(1)
+            ->willReturnSelf();
+
+        $quoteMock->expects($this->once())
+            ->method('setReservedOrderId')
+            ->with(null)
+            ->willReturnSelf();
+
+        $this->cartRepositoryMock->expects($this->once())
+            ->method('save')
+            ->with($quoteMock);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('replaceQuote')
+            ->with($quoteMock)
+            ->willReturnSelf();
+
+        $this->redirectUrlResolverMock->expects($this->once())
+            ->method('resolve')
+            ->willReturn($resolvedUrl);
+
+        $this->resultRedirectMock->expects($this->once())
+            ->method('setUrl')
+            ->with($resolvedUrl)
+            ->willReturnSelf();
+
+        $this->assertSame($this->resultRedirectMock, $this->controller->execute());
+    }
+
+    public function testExecuteRedirectsToCartWhenOrderIsNotEligibleForRestoration(): void
+    {
+        $orderMock = $this->createMock(Order::class);
+
+        $this->formKeyValidatorMock->expects($this->once())
+            ->method('validate')
+            ->with($this->requestMock)
+            ->willReturn(true);
+
+        $this->configMock->expects($this->once())
+            ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('getLastRealOrder')
+            ->willReturn($orderMock);
+
+        $this->orderEligibilityValidatorMock->expects($this->once())
+            ->method('isEligible')
+            ->with($orderMock)
+            ->willReturn(false);
+
+        $this->checkoutSessionMock->expects($this->never())
+            ->method('restoreQuote');
+
+        $this->messageManagerMock->expects($this->once())
+            ->method('addErrorMessage')
+            ->with(__('We could not restore your cart. Please add your items again.'));
+
+        $this->resultRedirectMock->expects($this->once())
+            ->method('setPath')
+            ->with('checkout/cart')
             ->willReturnSelf();
 
         $this->assertSame($this->resultRedirectMock, $this->controller->execute());
@@ -183,6 +325,8 @@ class RestoreTest extends TestCase
 
     public function testExecuteRedirectsToCartWithErrorMessageWhenRestoreQuoteReturnsFalse(): void
     {
+        $orderMock = $this->createMock(Order::class);
+
         $this->formKeyValidatorMock->expects($this->once())
             ->method('validate')
             ->with($this->requestMock)
@@ -190,6 +334,15 @@ class RestoreTest extends TestCase
 
         $this->configMock->expects($this->once())
             ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('getLastRealOrder')
+            ->willReturn($orderMock);
+
+        $this->orderEligibilityValidatorMock->expects($this->once())
+            ->method('isEligible')
+            ->with($orderMock)
             ->willReturn(true);
 
         $this->checkoutSessionMock->expects($this->once())
@@ -214,9 +367,11 @@ class RestoreTest extends TestCase
         $this->assertSame($this->resultRedirectMock, $this->controller->execute());
     }
 
-    public function testExecuteHandlesUnexpectedExceptionGracefully(): void
+    public function testExecuteRedirectsToCartWhenFallbackQuoteByLastQuoteIdDoesNotExist(): void
     {
-        $exception = new \RuntimeException('Database connection error');
+        $emptyOrderMock = $this->createMock(Order::class);
+        $emptyOrderMock->method('getEntityId')->willReturn(null);
+        $emptyOrderMock->method('getIncrementId')->willReturn(null);
 
         $this->formKeyValidatorMock->expects($this->once())
             ->method('validate')
@@ -225,6 +380,64 @@ class RestoreTest extends TestCase
 
         $this->configMock->expects($this->once())
             ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('getLastRealOrder')
+            ->willReturn($emptyOrderMock);
+
+        $this->orderEligibilityValidatorMock->expects($this->once())
+            ->method('isEligible')
+            ->with($emptyOrderMock)
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('restoreQuote')
+            ->willReturn(false);
+
+        $this->checkoutSessionMock->method('__call')
+            ->willReturnCallback(
+                static fn (string $method): ?int => $method === 'getLastQuoteId' ? 42 : null
+            );
+
+        $this->cartRepositoryMock->expects($this->once())
+            ->method('get')
+            ->with(42)
+            ->willThrowException(new NoSuchEntityException(__('No such entity with cartId = 42')));
+
+        $this->messageManagerMock->expects($this->once())
+            ->method('addErrorMessage')
+            ->with(__('We could not restore your cart. Please add your items again.'));
+
+        $this->resultRedirectMock->expects($this->once())
+            ->method('setPath')
+            ->with('checkout/cart')
+            ->willReturnSelf();
+
+        $this->assertSame($this->resultRedirectMock, $this->controller->execute());
+    }
+
+    public function testExecuteHandlesUnexpectedExceptionGracefully(): void
+    {
+        $exception = new \RuntimeException('Database connection error');
+        $orderMock = $this->createMock(Order::class);
+
+        $this->formKeyValidatorMock->expects($this->once())
+            ->method('validate')
+            ->with($this->requestMock)
+            ->willReturn(true);
+
+        $this->configMock->expects($this->once())
+            ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->expects($this->once())
+            ->method('getLastRealOrder')
+            ->willReturn($orderMock);
+
+        $this->orderEligibilityValidatorMock->expects($this->once())
+            ->method('isEligible')
+            ->with($orderMock)
             ->willReturn(true);
 
         $this->checkoutSessionMock->expects($this->once())

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Grigoli\CheckoutResilience\Test\Unit\ViewModel;
 
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Grigoli\CheckoutResilience\ViewModel\FailurePageQuoteRestore;
 use Magento\Checkout\Model\Session as CheckoutSession;
 use Magento\Framework\UrlInterface;
+use Magento\Sales\Model\Order;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
@@ -32,6 +34,11 @@ class FailurePageQuoteRestoreTest extends TestCase
     private UrlInterface $urlBuilderMock;
 
     /**
+     * @var OrderEligibilityValidator&MockObject
+     */
+    private OrderEligibilityValidator $orderEligibilityValidatorMock;
+
+    /**
      * @var FailurePageQuoteRestore
      */
     private FailurePageQuoteRestore $viewModel;
@@ -41,11 +48,13 @@ class FailurePageQuoteRestoreTest extends TestCase
         $this->configMock = $this->createMock(Config::class);
         $this->checkoutSessionMock = $this->createMock(CheckoutSession::class);
         $this->urlBuilderMock = $this->createMock(UrlInterface::class);
+        $this->orderEligibilityValidatorMock = $this->createMock(OrderEligibilityValidator::class);
 
         $this->viewModel = new FailurePageQuoteRestore(
             $this->configMock,
             $this->checkoutSessionMock,
-            $this->urlBuilderMock
+            $this->urlBuilderMock,
+            $this->orderEligibilityValidatorMock
         );
     }
 
@@ -53,9 +62,11 @@ class FailurePageQuoteRestoreTest extends TestCase
     public function testCanShowButton(
         bool $buttonEnabled,
         int|string|null $lastQuoteId,
-        ?string $lastRealOrderId,
+        bool $orderEligible,
         bool $expectedResult
     ): void {
+        $orderMock = $this->createMock(Order::class);
+
         $this->configMock->expects($this->once())
             ->method('isFailurePageButtonEnabled')
             ->willReturn($buttonEnabled);
@@ -64,10 +75,16 @@ class FailurePageQuoteRestoreTest extends TestCase
             ->willReturnCallback(
                 static fn(string $method) => match ($method) {
                     'getLastQuoteId' => $lastQuoteId,
-                    'getLastRealOrderId' => $lastRealOrderId,
                     default => null,
                 }
             );
+
+        $this->checkoutSessionMock->method('getLastRealOrder')
+            ->willReturn($orderMock);
+
+        $this->orderEligibilityValidatorMock->method('isEligible')
+            ->with($orderMock)
+            ->willReturn($orderEligible);
 
         $this->assertSame($expectedResult, $this->viewModel->canShowButton());
     }
@@ -76,41 +93,41 @@ class FailurePageQuoteRestoreTest extends TestCase
      * @return array<string, array{
      *     buttonEnabled: bool,
      *     lastQuoteId: int|string|null,
-     *     lastRealOrderId: ?string,
+     *     orderEligible: bool,
      *     expectedResult: bool
      * }>
      */
     public static function canShowButtonDataProvider(): array
     {
         return [
-            'enabled with valid quote and order IDs in session' => [
+            'enabled with valid quote ID and eligible order (or no order created yet)' => [
                 'buttonEnabled' => true,
                 'lastQuoteId' => 42,
-                'lastRealOrderId' => '000000042',
+                'orderEligible' => true,
                 'expectedResult' => true,
             ],
-            'disabled in configuration even with valid session data' => [
+            'enabled with valid quote ID but ineligible order (e.g. processing/complete/closed/invoiced)' => [
+                'buttonEnabled' => true,
+                'lastQuoteId' => 42,
+                'orderEligible' => false,
+                'expectedResult' => false,
+            ],
+            'disabled in configuration even with valid session data and eligible order' => [
                 'buttonEnabled' => false,
                 'lastQuoteId' => 42,
-                'lastRealOrderId' => '000000042',
+                'orderEligible' => true,
                 'expectedResult' => false,
             ],
             'enabled in configuration but missing last quote ID in session' => [
                 'buttonEnabled' => true,
                 'lastQuoteId' => null,
-                'lastRealOrderId' => '000000042',
+                'orderEligible' => true,
                 'expectedResult' => false,
             ],
-            'enabled in configuration but missing last real order ID in session' => [
-                'buttonEnabled' => true,
-                'lastQuoteId' => 42,
-                'lastRealOrderId' => null,
-                'expectedResult' => false,
-            ],
-            'enabled in configuration but empty session data' => [
+            'enabled in configuration but empty last quote ID in session' => [
                 'buttonEnabled' => true,
                 'lastQuoteId' => 0,
-                'lastRealOrderId' => '',
+                'orderEligible' => true,
                 'expectedResult' => false,
             ],
         ];
