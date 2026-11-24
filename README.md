@@ -32,9 +32,10 @@ A payment-method-agnostic Adobe Commerce / Magento 2 module designed to improve 
 * **Failure Page Quote Restoration Button (`Controller\Quote\Restore`, `ViewModel\FailurePageQuoteRestore`, `view/frontend/*`):** Injects a configurable quote restoration button (`action primary`) into the `checkout_onepage_failure` layout when both global and failure-page toggles are active and a restorable order/quote exists in the checkout session. Submits a CSRF-protected (`form_key`) `POST` request to `checkout_resilience/quote/restore`, restores the active quote in session via `Magento\Checkout\Model\Session::restoreQuote()` for both guest and logged-in customers, redirects to the configured post-restoration destination on success, and safely handles errors by logging details, notifying the customer via `MessageManager`, and redirecting to `checkout/cart`.
 * **Configurable Post-Restoration Redirect Destination & Open Redirect Protection (`Model\Config\Source\RedirectDestination`, `Model\Config\Backend\CustomRedirectUrl`, `Model\Resolver\RedirectUrlResolver`):** Allows administrators to configure the post-restoration redirect target per Store View (`checkout/#payment`, `checkout/#shipping`, `checkout/cart`, or a `custom` path/URL). Includes conditional Admin visibility (`<depends>`), a backend config model that validates custom paths/URLs on save, and a dedicated `RedirectUrlResolver` service that prevents Open Redirect vulnerabilities by verifying same-origin hosts via `Magento\Framework\Url\HostChecker` and safely falling back to `checkout/#payment` with a logged warning when an invalid or empty custom URL is encountered.
 * **Pre-Failure Payment Retry Interception & Counter Management (`Model\Retry\RetryCounter`, `Observer\InterceptCheckoutFailureObserver`, `Observer\ResetRetryCounterOnSuccessObserver`, `etc/frontend/events.xml`):** Intercepts `controller_action_predispatch_checkout_onepage_failure` before the failure page renders when pre-failure retries are enabled and `attempts < max_retry_attempts`. Automatically restores the quote in session (`Session::restoreQuote()`), increments a per-quote retry counter stored in `Magento\Checkout\Model\Session`, adds a configurable warning message with the remaining attempts (`%1`), sets `ActionInterface::FLAG_NO_DISPATCH`, and redirects the customer back to `checkout/#payment`. Gracefully falls back to `checkout/onepage/failure` when the retry limit is reached or if quote restoration fails, and automatically resets the session retry counter on `checkout_onepage_controller_success_action`.
-* **Quote Reactivation Service (`Model\QuoteRestoreManagement`):** Centralized service that validates module enablement (`Model\Config`), input parameters, and quote ownership/state, locates and reactivates inactive quotes for both guest users (via masked cart IDs) and logged-in customers (via their most recent order), resets `is_active = 1` and `reserved_order_id = null`, persists the quote via `CartRepositoryInterface`, dispatches the `resilience_restore_quote` event, and logs unexpected errors via `Psr\Log\LoggerInterface`.
+* **Order Eligibility Validation (`Model\Validator\OrderEligibilityValidator`):** Centralized eligibility validator shared across `ViewModel\FailurePageQuoteRestore`, `Controller\Quote\Restore`, and `Model\QuoteRestoreManagement`. Prevents duplicate orders and double charges by denying quote restoration when the associated order is in `processing`, `complete`, or `closed` state or already has linked invoices (`$order->hasInvoices()`), while permitting restoration when no order was created yet (`last_quote_id` without an order) or when the order is in `canceled`, `pending_payment`, `pending`, or `new` state without invoices. Logs structured PSR-3 warnings with `order_id`, `state`, `has_invoices`, and `reason` whenever a restoration attempt is denied.
+* **Quote Reactivation Service (`Model\QuoteRestoreManagement`):** Centralized service that validates module enablement (`Model\Config`), input parameters, quote ownership/state, and associated order eligibility (`OrderEligibilityValidator`), locates and reactivates inactive quotes for both guest users (via masked cart IDs) and logged-in customers (via their most recent order), resets `is_active = 1` and `reserved_order_id = null`, persists the quote via `CartRepositoryInterface`, dispatches the `resilience_restore_quote` event, and logs unexpected errors via `Psr\Log\LoggerInterface`.
 * **Cart Recovery via REST WebAPI (`Api\*`, `Model\Data\QuoteRestoreResponse`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`):** Service contracts with documented `@throws` annotations, Data Transfer Object (`QuoteRestoreResponseInterface`), and REST endpoints (`POST /V1/guest-carts/:cartId/resilience/restore` and `POST /V1/carts/mine/resilience/restore`) returning `{"success": true}` (`200 OK`) on success and throwing native Magento framework exceptions (`InputException`, `LocalizedException`, `AuthorizationException`, `NoSuchEntityException`, `\RuntimeException`) for standardized HTTP error responses (`400`, `401`, `404`, `500`).
-* **Unit Test Coverage:** Comprehensive PHPUnit test suites covering `Model\Config`, `Model\Config\Source\RedirectDestination`, `Model\Config\Backend\CustomRedirectUrl`, `Model\Resolver\RedirectUrlResolver`, `Model\Retry\RetryCounter`, `Observer\InterceptCheckoutFailureObserver`, `Observer\ResetRetryCounterOnSuccessObserver`, `Model\Checkout\ConfigProvider`, `Model\Data\QuoteRestoreResponse`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`, `Model\QuoteRestoreManagement`, `ViewModel\FailurePageQuoteRestore`, and `Controller\Quote\Restore`.
+* **Unit Test Coverage:** Comprehensive PHPUnit test suites covering `Model\Config`, `Model\Config\Source\RedirectDestination`, `Model\Config\Backend\CustomRedirectUrl`, `Model\Resolver\RedirectUrlResolver`, `Model\Retry\RetryCounter`, `Model\Validator\OrderEligibilityValidator`, `Observer\InterceptCheckoutFailureObserver`, `Observer\ResetRetryCounterOnSuccessObserver`, `Model\Checkout\ConfigProvider`, `Model\Data\QuoteRestoreResponse`, `Model\GuestQuoteRestore`, `Model\MineQuoteRestore`, `Model\QuoteRestoreManagement`, `ViewModel\FailurePageQuoteRestore`, and `Controller\Quote\Restore`.
 
 ### Planned Capabilities (Module Roadmap)
 * **Automated Payment Retries:** Automatic retry execution triggered by specific, configurable gateway error codes/responses, bounded by `max_automatic_retries`.
@@ -290,8 +291,10 @@ app/code/Grigoli/CheckoutResilience/
 │   │   └── QuoteRestoreResponse.php
 │   ├── Resolver/
 │   │   └── RedirectUrlResolver.php
-│   └── Retry/
-│       └── RetryCounter.php
+│   ├── Retry/
+│   │   └── RetryCounter.php
+│   └── Validator/
+│       └── OrderEligibilityValidator.php
 ├── Observer/
 │   ├── InterceptCheckoutFailureObserver.php
 │   └── ResetRetryCounterOnSuccessObserver.php
@@ -316,8 +319,10 @@ app/code/Grigoli/CheckoutResilience/
 │       │   │   └── QuoteRestoreResponseTest.php
 │       │   ├── Resolver/
 │       │   │   └── RedirectUrlResolverTest.php
-│       │   └── Retry/
-│       │       └── RetryCounterTest.php
+│       │   ├── Retry/
+│       │   │   └── RetryCounterTest.php
+│       │   └── Validator/
+│       │       └── OrderEligibilityValidatorTest.php
 │       ├── Observer/
 │       │   ├── InterceptCheckoutFailureObserverTest.php
 │       │   └── ResetRetryCounterOnSuccessObserverTest.php
