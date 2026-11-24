@@ -110,9 +110,11 @@ class PreviousOrderProcessorTest extends TestCase
     ): void {
         $orderId = 105;
         $incrementId = '000000105';
+        $quoteId = 42;
         $orderMock = $this->createMock(Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
         $orderMock->method('getIncrementId')->willReturn($incrementId);
+        $orderMock->method('getQuoteId')->willReturn($quoteId);
         $orderMock->method('getState')->willReturn($state);
         $orderMock->expects($this->once())
             ->method('canCancel')
@@ -155,11 +157,13 @@ class PreviousOrderProcessorTest extends TestCase
         $this->loggerMock->expects($this->exactly(2))
             ->method('info')
             ->willReturnCallback(
-                function (string $message, array $context) use ($orderId, $incrementId): void {
+                function (string $message, array $context) use ($quoteId, $orderId, $incrementId, $state): void {
                     $this->assertSame(
                         [
+                            'quote_id' => $quoteId,
                             'order_id' => $orderId,
                             'increment_id' => $incrementId,
+                            'state' => $state,
                         ],
                         $context
                     );
@@ -193,9 +197,11 @@ class PreviousOrderProcessorTest extends TestCase
     {
         $orderId = 106;
         $incrementId = '000000106';
+        $quoteId = 43;
         $orderMock = $this->createMock(Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
         $orderMock->method('getIncrementId')->willReturn($incrementId);
+        $orderMock->method('getQuoteId')->willReturn($quoteId);
         $orderMock->method('getState')->willReturn(Order::STATE_PENDING_PAYMENT);
 
         $this->configMock->expects($this->once())
@@ -238,8 +244,10 @@ class PreviousOrderProcessorTest extends TestCase
             ->with(
                 'Internal audit comment added to previous order upon quote restoration.',
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
                     'increment_id' => $incrementId,
+                    'state' => Order::STATE_PENDING_PAYMENT,
                 ]
             );
 
@@ -357,10 +365,12 @@ class PreviousOrderProcessorTest extends TestCase
     {
         $orderId = 110;
         $incrementId = '000000110';
+        $quoteId = 44;
         $exception = new \RuntimeException('Unable to cancel order');
         $orderMock = $this->createMock(Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
         $orderMock->method('getIncrementId')->willReturn($incrementId);
+        $orderMock->method('getQuoteId')->willReturn($quoteId);
         $orderMock->method('getState')->willReturn(Order::STATE_PENDING_PAYMENT);
         $orderMock->method('canCancel')->willReturn(true);
 
@@ -378,8 +388,10 @@ class PreviousOrderProcessorTest extends TestCase
             ->with(
                 'Failed to automatically cancel previous order upon quote restoration: Unable to cancel order',
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
                     'increment_id' => $incrementId,
+                    'state' => Order::STATE_PENDING_PAYMENT,
                     'exception' => $exception,
                 ]
             );
@@ -401,10 +413,12 @@ class PreviousOrderProcessorTest extends TestCase
     {
         $orderId = 111;
         $incrementId = '000000111';
+        $quoteId = 45;
         $exception = new \RuntimeException('Database write failed');
         $orderMock = $this->createMock(Order::class);
         $orderMock->method('getEntityId')->willReturn($orderId);
         $orderMock->method('getIncrementId')->willReturn($incrementId);
+        $orderMock->method('getQuoteId')->willReturn($quoteId);
         $orderMock->method('getState')->willReturn(Order::STATE_CANCELED);
 
         $this->configMock->expects($this->once())
@@ -421,8 +435,10 @@ class PreviousOrderProcessorTest extends TestCase
             ->with(
                 'Failed to add internal audit comment to previous order upon quote restoration: Database write failed',
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
                     'increment_id' => $incrementId,
+                    'state' => Order::STATE_CANCELED,
                     'exception' => $exception,
                 ]
             );

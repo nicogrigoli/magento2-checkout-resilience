@@ -3,4 +3,61 @@
     <preference for="Grigoli\CheckoutResilience\Api\Data\QuoteRestoreResponseInterface" type="Grigoli\CheckoutResilience\Model\Data\QuoteRestoreResponse" />
     <preference for="Grigoli\CheckoutResilience\Api\GuestQuoteRestoreManagementInterface" type="Grigoli\CheckoutResilience\Model\GuestQuoteRestore" />
     <preference for="Grigoli\CheckoutResilience\Api\MineQuoteRestoreManagementInterface" type="Grigoli\CheckoutResilience\Model\MineQuoteRestore" />
+
+    <virtualType name="Grigoli\CheckoutResilience\Logger\Handler" type="Magento\Framework\Logger\Handler\Base">
+        <arguments>
+            <argument name="fileName" xsi:type="string">/var/log/grigoli_checkout_resilience.log</argument>
+        </arguments>
+    </virtualType>
+
+    <virtualType name="Grigoli\CheckoutResilience\Logger\Logger" type="Magento\Framework\Logger\Monolog">
+        <arguments>
+            <argument name="name" xsi:type="string">grigoli_checkout_resilience</argument>
+            <argument name="handlers" xsi:type="array">
+                <item name="system" xsi:type="object">Grigoli\CheckoutResilience\Logger\Handler</item>
+            </argument>
+        </arguments>
+    </virtualType>
+
+    <type name="Grigoli\CheckoutResilience\Controller\Quote\Restore">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
+
+    <type name="Grigoli\CheckoutResilience\Model\Order\PreviousOrderProcessor">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
+
+    <type name="Grigoli\CheckoutResilience\Model\QuoteRestoreManagement">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
+
+    <type name="Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
+
+    <type name="Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
+
+    <type name="Grigoli\CheckoutResilience\Observer\InterceptCheckoutFailureObserver">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
+
+    <type name="Grigoli\CheckoutResilience\ViewModel\FailurePageQuoteRestore">
+        <arguments>
+            <argument name="logger" xsi:type="object">Grigoli\CheckoutResilience\Logger\Logger</argument>
+        </arguments>
+    </type>
 </config>

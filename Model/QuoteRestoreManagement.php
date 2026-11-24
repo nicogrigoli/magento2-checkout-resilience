@@ -211,6 +211,15 @@ class QuoteRestoreManagement
 
             $this->eventManager->dispatch('resilience_restore_quote', ['quote' => $quote]);
 
+            $this->logger->info(
+                'Quote successfully restored.',
+                [
+                    'quote_id' => (int) $quote->getId(),
+                    'order_id' => $lastOrder?->getEntityId(),
+                    'increment_id' => $lastOrder?->getIncrementId(),
+                ]
+            );
+
             return true;
         } catch (LocalizedException $e) {
             throw $e;

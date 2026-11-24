@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 
 #[AllowMockObjectsWithoutExpectations]
 class FailurePageQuoteRestoreTest extends TestCase
@@ -39,6 +40,11 @@ class FailurePageQuoteRestoreTest extends TestCase
     private OrderEligibilityValidator $orderEligibilityValidatorMock;
 
     /**
+     * @var LoggerInterface&MockObject
+     */
+    private LoggerInterface $loggerMock;
+
+    /**
      * @var FailurePageQuoteRestore
      */
     private FailurePageQuoteRestore $viewModel;
@@ -49,12 +55,14 @@ class FailurePageQuoteRestoreTest extends TestCase
         $this->checkoutSessionMock = $this->createMock(CheckoutSession::class);
         $this->urlBuilderMock = $this->createMock(UrlInterface::class);
         $this->orderEligibilityValidatorMock = $this->createMock(OrderEligibilityValidator::class);
+        $this->loggerMock = $this->createMock(LoggerInterface::class);
 
         $this->viewModel = new FailurePageQuoteRestore(
             $this->configMock,
             $this->checkoutSessionMock,
             $this->urlBuilderMock,
-            $this->orderEligibilityValidatorMock
+            $this->orderEligibilityValidatorMock,
+            $this->loggerMock
         );
     }
 
@@ -152,5 +160,32 @@ class FailurePageQuoteRestoreTest extends TestCase
             ->willReturn($expectedUrl);
 
         $this->assertSame($expectedUrl, $this->viewModel->getRestoreActionUrl());
+    }
+
+    public function testCanShowButtonLogsDebugWhenLastQuoteIdIsMissing(): void
+    {
+        $this->configMock->expects($this->once())
+            ->method('isFailurePageButtonEnabled')
+            ->willReturn(true);
+
+        $this->checkoutSessionMock->method('__call')
+            ->willReturnCallback(
+                static fn(string $method) => match ($method) {
+                    'getLastQuoteId' => null,
+                    default => null,
+                }
+            );
+
+        $this->loggerMock->expects($this->once())
+            ->method('debug')
+            ->with(
+                'Failure page quote restoration button hidden: no last_quote_id found in checkout session.',
+                [
+                    'quote_id' => 0,
+                    'reason' => 'missing_last_quote_id',
+                ]
+            );
+
+        $this->assertFalse($this->viewModel->canShowButton());
     }
 }
