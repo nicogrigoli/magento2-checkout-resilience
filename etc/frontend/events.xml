@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<config xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xsi:noNamespaceSchemaLocation="urn:magento:framework:Event/etc/events.xsd">
+    <event name="controller_action_predispatch_checkout_onepage_failure">
+        <observer name="grigoli_checkout_resilience_intercept_checkout_failure"
+                  instance="Grigoli\CheckoutResilience\Observer\InterceptCheckoutFailureObserver"/>
+    </event>
+    <event name="checkout_onepage_controller_success_action">
+        <observer name="grigoli_checkout_resilience_reset_retry_counter_on_success"
+                  instance="Grigoli\CheckoutResilience\Observer\ResetRetryCounterOnSuccessObserver"/>
+    </event>
+</config>

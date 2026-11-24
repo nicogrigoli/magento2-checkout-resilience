@@ -10,6 +10,9 @@
                 <button_label>Retry Payment</button_label>
                 <redirect_destination>checkout/#payment</redirect_destination>
                 <custom_redirect_url/>
+                <enable_pre_failure_retries>0</enable_pre_failure_retries>
+                <max_retry_attempts>3</max_retry_attempts>
+                <retry_notice_message>Payment failed. Please try again (%1 attempts remaining).</retry_notice_message>
             </failure_page_recovery>
         </checkout_resilience>
     </default>
