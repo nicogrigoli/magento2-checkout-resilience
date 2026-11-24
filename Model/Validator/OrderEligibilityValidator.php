@@ -60,6 +60,8 @@ class OrderEligibilityValidator
         }
 
         $orderId = $order->getEntityId() ?? $order->getIncrementId();
+        $incrementId = $order->getIncrementId();
+        $quoteId = $order->getQuoteId();
         $state = $order->getState();
         $hasInvoices = $this->orderHasInvoices($order);
 
@@ -67,7 +69,9 @@ class OrderEligibilityValidator
             $this->logger->warning(
                 'Quote restoration denied: associated order already has invoices.',
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
+                    'increment_id' => $incrementId,
                     'state' => $state,
                     'has_invoices' => true,
                     'reason' => 'order_has_invoices',
@@ -88,7 +92,9 @@ class OrderEligibilityValidator
             $this->logger->warning(
                 'Quote restoration denied: order state is not eligible for restoration.',
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
+                    'increment_id' => $incrementId,
                     'state' => $state,
                     'has_invoices' => false,
                     'reason' => 'ineligible_order_state',

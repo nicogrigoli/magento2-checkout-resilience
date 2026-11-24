@@ -70,9 +70,11 @@ class PreviousOrderProcessor
         }
 
         $incrementId = (string) $order->getIncrementId();
-        $wasCanceledByModule = $this->cancelIfEligible($order, $orderId, $incrementId);
+        $quoteId = $order->getQuoteId();
+        $state = $order->getState();
+        $wasCanceledByModule = $this->cancelIfEligible($order, $orderId, $incrementId, $quoteId, $state);
 
-        $this->addAuditComment($orderId, $incrementId, $wasCanceledByModule);
+        $this->addAuditComment($orderId, $incrementId, $wasCanceledByModule, $quoteId, $state);
     }
 
     /**
@@ -83,10 +85,17 @@ class PreviousOrderProcessor
      * @param OrderInterface $order
      * @param int $orderId
      * @param string $incrementId
+     * @param int|string|null $quoteId
+     * @param string|null $state
      * @return bool True if the order was canceled by this process, false otherwise.
      */
-    private function cancelIfEligible(OrderInterface $order, int $orderId, string $incrementId): bool
-    {
+    private function cancelIfEligible(
+        OrderInterface $order,
+        int $orderId,
+        string $incrementId,
+        int|string|null $quoteId = null,
+        ?string $state = null
+    ): bool {
         if (!$this->config->isCancelPreviousOrderEnabled()) {
             return false;
         }
@@ -101,8 +110,10 @@ class PreviousOrderProcessor
                 $this->logger->info(
                     'Previous pending order automatically canceled upon quote restoration.',
                     [
+                        'quote_id' => $quoteId,
                         'order_id' => $orderId,
                         'increment_id' => $incrementId,
+                        'state' => $state,
                     ]
                 );
                 return true;
@@ -111,8 +122,10 @@ class PreviousOrderProcessor
             $this->logger->error(
                 'Failed to automatically cancel previous order upon quote restoration: ' . $e->getMessage(),
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
                     'increment_id' => $incrementId,
+                    'state' => $state,
                     'exception' => $e,
                 ]
             );
@@ -127,10 +140,17 @@ class PreviousOrderProcessor
      * @param int $orderId
      * @param string $incrementId
      * @param bool $wasCanceledByModule
+     * @param int|string|null $quoteId
+     * @param string|null $state
      * @return void
      */
-    private function addAuditComment(int $orderId, string $incrementId, bool $wasCanceledByModule): void
-    {
+    private function addAuditComment(
+        int $orderId,
+        string $incrementId,
+        bool $wasCanceledByModule,
+        int|string|null $quoteId = null,
+        ?string $state = null
+    ): void {
         $commentText = $wasCanceledByModule
             ? (string) __(
                 'Order automatically canceled because the customer restored the cart from the checkout failure page.'
@@ -151,16 +171,20 @@ class PreviousOrderProcessor
             $this->logger->info(
                 'Internal audit comment added to previous order upon quote restoration.',
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
                     'increment_id' => $incrementId,
+                    'state' => $state,
                 ]
             );
         } catch (\Throwable $e) {
             $this->logger->error(
                 'Failed to add internal audit comment to previous order upon quote restoration: ' . $e->getMessage(),
                 [
+                    'quote_id' => $quoteId,
                     'order_id' => $orderId,
                     'increment_id' => $incrementId,
+                    'state' => $state,
                     'exception' => $e,
                 ]
             );
