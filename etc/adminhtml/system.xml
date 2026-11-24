@@ -45,6 +45,26 @@
                         <field id="redirect_destination">custom</field>
                     </depends>
                 </field>
+                <field id="enable_pre_failure_retries" translate="label, comment" type="select" sortOrder="40" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Enable Pre-Failure Retries</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Set 'Yes' to automatically intercept payment failures, restore the quote, and redirect to the payment step while retry attempts remain.</comment>
+                </field>
+                <field id="max_retry_attempts" translate="label, comment" type="text" sortOrder="50" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Max Retry Attempts</label>
+                    <validate>validate-digits validate-zero-or-greater</validate>
+                    <comment>Maximum number of pre-failure payment retry attempts before displaying the checkout failure page (0 disables interception).</comment>
+                    <depends>
+                        <field id="enable_pre_failure_retries">1</field>
+                    </depends>
+                </field>
+                <field id="retry_notice_message" translate="label, comment" type="text" sortOrder="60" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Retry Notice Message</label>
+                    <comment>Message displayed on the payment step after an intercepted failure. Use %1 as a placeholder for remaining attempts.</comment>
+                    <depends>
+                        <field id="enable_pre_failure_retries">1</field>
+                    </depends>
+                </field>
             </group>
         </section>
     </system>

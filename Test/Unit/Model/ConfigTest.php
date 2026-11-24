@@ -21,6 +21,12 @@ class ConfigTest extends TestCase
         'checkout_resilience/failure_page_recovery/redirect_destination';
     private const XML_PATH_FAILURE_PAGE_CUSTOM_REDIRECT_URL =
         'checkout_resilience/failure_page_recovery/custom_redirect_url';
+    private const XML_PATH_PRE_FAILURE_RETRIES_ENABLED =
+        'checkout_resilience/failure_page_recovery/enable_pre_failure_retries';
+    private const XML_PATH_MAX_RETRY_ATTEMPTS =
+        'checkout_resilience/failure_page_recovery/max_retry_attempts';
+    private const XML_PATH_RETRY_NOTICE_MESSAGE =
+        'checkout_resilience/failure_page_recovery/retry_notice_message';
 
     /**
      * @var ScopeConfigInterface&MockObject
@@ -334,6 +340,193 @@ class ConfigTest extends TestCase
                 'scopeCode' => 'default',
                 'configuredValue' => '   ',
                 'expectedUrl' => '',
+            ],
+        ];
+    }
+
+    #[DataProvider('preFailureRetriesEnabledDataProvider')]
+    public function testIsPreFailureRetriesEnabled(
+        ?string $scopeCode,
+        bool $globalEnabled,
+        bool $retriesEnabled,
+        bool $expectedResult
+    ): void {
+        if (!$globalEnabled) {
+            $this->scopeConfigMock->expects($this->once())
+                ->method('isSetFlag')
+                ->with(
+                    self::XML_PATH_ENABLED,
+                    ScopeInterface::SCOPE_STORE,
+                    $scopeCode
+                )
+                ->willReturn(false);
+        } else {
+            $this->scopeConfigMock->expects($this->exactly(2))
+                ->method('isSetFlag')
+                ->willReturnMap([
+                    [
+                        self::XML_PATH_ENABLED,
+                        ScopeInterface::SCOPE_STORE,
+                        $scopeCode,
+                        true,
+                    ],
+                    [
+                        self::XML_PATH_PRE_FAILURE_RETRIES_ENABLED,
+                        ScopeInterface::SCOPE_STORE,
+                        $scopeCode,
+                        $retriesEnabled,
+                    ],
+                ]);
+        }
+
+        $result = $scopeCode === null
+            ? $this->config->isPreFailureRetriesEnabled()
+            : $this->config->isPreFailureRetriesEnabled($scopeCode);
+
+        $this->assertSame($expectedResult, $result);
+    }
+
+    /**
+     * @return array<string, array{scopeCode: ?string, globalEnabled: bool, retriesEnabled: bool, expectedResult: bool}>
+     */
+    public static function preFailureRetriesEnabledDataProvider(): array
+    {
+        return [
+            'both global and pre-failure retries enabled (null scope)' => [
+                'scopeCode' => null,
+                'globalEnabled' => true,
+                'retriesEnabled' => true,
+                'expectedResult' => true,
+            ],
+            'global enabled but pre-failure retries disabled (null scope)' => [
+                'scopeCode' => null,
+                'globalEnabled' => true,
+                'retriesEnabled' => false,
+                'expectedResult' => false,
+            ],
+            'global disabled and pre-failure retries enabled (null scope)' => [
+                'scopeCode' => null,
+                'globalEnabled' => false,
+                'retriesEnabled' => true,
+                'expectedResult' => false,
+            ],
+            'both global and pre-failure retries enabled (specific scope)' => [
+                'scopeCode' => 'default',
+                'globalEnabled' => true,
+                'retriesEnabled' => true,
+                'expectedResult' => true,
+            ],
+        ];
+    }
+
+    #[DataProvider('maxRetryAttemptsDataProvider')]
+    public function testGetMaxRetryAttempts(
+        ?string $scopeCode,
+        mixed $configuredValue,
+        int $expectedAttempts
+    ): void {
+        $this->scopeConfigMock->expects($this->once())
+            ->method('getValue')
+            ->with(
+                self::XML_PATH_MAX_RETRY_ATTEMPTS,
+                ScopeInterface::SCOPE_STORE,
+                $scopeCode
+            )
+            ->willReturn($configuredValue);
+
+        $result = $scopeCode === null
+            ? $this->config->getMaxRetryAttempts()
+            : $this->config->getMaxRetryAttempts($scopeCode);
+
+        $this->assertSame($expectedAttempts, $result);
+    }
+
+    /**
+     * @return array<string, array{scopeCode: ?string, configuredValue: mixed, expectedAttempts: int}>
+     */
+    public static function maxRetryAttemptsDataProvider(): array
+    {
+        return [
+            'positive integer string (null scope)' => [
+                'scopeCode' => null,
+                'configuredValue' => '5',
+                'expectedAttempts' => 5,
+            ],
+            'zero string disables retries (specific scope)' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '0',
+                'expectedAttempts' => 0,
+            ],
+            'negative value is clamped to zero' => [
+                'scopeCode' => null,
+                'configuredValue' => '-2',
+                'expectedAttempts' => 0,
+            ],
+            'null falls back to default 3' => [
+                'scopeCode' => null,
+                'configuredValue' => null,
+                'expectedAttempts' => 3,
+            ],
+            'empty string falls back to default 3' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '',
+                'expectedAttempts' => 3,
+            ],
+            'non-numeric string falls back to default 3' => [
+                'scopeCode' => null,
+                'configuredValue' => 'abc',
+                'expectedAttempts' => 3,
+            ],
+        ];
+    }
+
+    #[DataProvider('retryNoticeMessageDataProvider')]
+    public function testGetRetryNoticeMessage(
+        ?string $scopeCode,
+        ?string $configuredValue,
+        string $expectedMessage
+    ): void {
+        $this->scopeConfigMock->expects($this->once())
+            ->method('getValue')
+            ->with(
+                self::XML_PATH_RETRY_NOTICE_MESSAGE,
+                ScopeInterface::SCOPE_STORE,
+                $scopeCode
+            )
+            ->willReturn($configuredValue);
+
+        $result = $scopeCode === null
+            ? $this->config->getRetryNoticeMessage()
+            : $this->config->getRetryNoticeMessage($scopeCode);
+
+        $this->assertSame($expectedMessage, $result);
+    }
+
+    /**
+     * @return array<string, array{scopeCode: ?string, configuredValue: ?string, expectedMessage: string}>
+     */
+    public static function retryNoticeMessageDataProvider(): array
+    {
+        return [
+            'custom configured message (null scope)' => [
+                'scopeCode' => null,
+                'configuredValue' => 'Card declined. %1 retries left.',
+                'expectedMessage' => 'Card declined. %1 retries left.',
+            ],
+            'custom configured message with whitespace (specific scope)' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '  Please retry (%1 remaining).  ',
+                'expectedMessage' => 'Please retry (%1 remaining).',
+            ],
+            'null falls back to default notice message' => [
+                'scopeCode' => null,
+                'configuredValue' => null,
+                'expectedMessage' => 'Payment failed. Please try again (%1 attempts remaining).',
+            ],
+            'empty string falls back to default notice message' => [
+                'scopeCode' => 'default',
+                'configuredValue' => '   ',
+                'expectedMessage' => 'Payment failed. Please try again (%1 attempts remaining).',
             ],
         ];
     }

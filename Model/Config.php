@@ -15,6 +15,8 @@ class Config
     private const GROUP_PATH_FAILURE_PAGE_RECOVERY = 'failure_page_recovery/';
     private const DEFAULT_FAILURE_PAGE_BUTTON_LABEL = 'Retry Payment';
     private const DEFAULT_FAILURE_PAGE_REDIRECT_DESTINATION = RedirectDestination::DESTINATION_CHECKOUT_PAYMENT;
+    private const DEFAULT_MAX_RETRY_ATTEMPTS = 3;
+    private const DEFAULT_RETRY_NOTICE_MESSAGE = 'Payment failed. Please try again (%1 attempts remaining).';
 
     /**
      * Constructor
@@ -116,5 +118,66 @@ class Config
         );
 
         return trim($customUrl);
+    }
+
+    /**
+     * Check whether pre-failure payment retry interception is enabled.
+     *
+     * Requires both the global module toggle and the pre-failure retries toggle to be enabled.
+     *
+     * @param ?string $scopeCode
+     * @return bool
+     */
+    public function isPreFailureRetriesEnabled(?string $scopeCode = null): bool
+    {
+        return $this->getEnabled($scopeCode)
+            && $this->scopeConfig->isSetFlag(
+                self::BASE_PATH . self::GROUP_PATH_FAILURE_PAGE_RECOVERY . 'enable_pre_failure_retries',
+                ScopeInterface::SCOPE_STORE,
+                $scopeCode
+            );
+    }
+
+    /**
+     * Get the configured maximum number of pre-failure payment retry attempts.
+     *
+     * Falls back to 3 if the configuration value is null or empty; clamps negative values to 0.
+     *
+     * @param ?string $scopeCode
+     * @return int
+     */
+    public function getMaxRetryAttempts(?string $scopeCode = null): int
+    {
+        $value = $this->scopeConfig->getValue(
+            self::BASE_PATH . self::GROUP_PATH_FAILURE_PAGE_RECOVERY . 'max_retry_attempts',
+            ScopeInterface::SCOPE_STORE,
+            $scopeCode
+        );
+
+        if ($value === null || trim((string) $value) === '' || !is_numeric($value)) {
+            return self::DEFAULT_MAX_RETRY_ATTEMPTS;
+        }
+
+        return max(0, (int) $value);
+    }
+
+    /**
+     * Get the configured notice message template displayed on an intercepted payment retry.
+     *
+     * Falls back to "Payment failed. Please try again (%1 attempts remaining)." if empty.
+     *
+     * @param ?string $scopeCode
+     * @return string
+     */
+    public function getRetryNoticeMessage(?string $scopeCode = null): string
+    {
+        $message = (string) $this->scopeConfig->getValue(
+            self::BASE_PATH . self::GROUP_PATH_FAILURE_PAGE_RECOVERY . 'retry_notice_message',
+            ScopeInterface::SCOPE_STORE,
+            $scopeCode
+        );
+        $trimmedMessage = trim($message);
+
+        return $trimmedMessage !== '' ? $trimmedMessage : self::DEFAULT_RETRY_NOTICE_MESSAGE;
     }
 }
