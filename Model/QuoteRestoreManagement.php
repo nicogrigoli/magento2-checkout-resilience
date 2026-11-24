@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Grigoli\CheckoutResilience\Model;
 
+use Grigoli\CheckoutResilience\Model\Order\PreviousOrderProcessor;
 use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Authorization\Model\UserContextInterface;
 use Magento\Framework\Api\SearchCriteriaBuilder;
@@ -40,6 +41,7 @@ class QuoteRestoreManagement
      * @param Config $config
      * @param OrderEligibilityValidator $orderEligibilityValidator
      * @param LoggerInterface $logger
+     * @param PreviousOrderProcessor|null $previousOrderProcessor
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
@@ -52,7 +54,8 @@ class QuoteRestoreManagement
         private readonly SortOrderBuilder $sortOrderBuilder,
         private readonly Config $config,
         private readonly OrderEligibilityValidator $orderEligibilityValidator,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly ?PreviousOrderProcessor $previousOrderProcessor = null
     ) {
     }
 
@@ -94,7 +97,7 @@ class QuoteRestoreManagement
         $this->validateOrderEligibility($lastOrder);
         $this->validateQuoteCanBeRestored($quote);
 
-        return $this->processQuoteRestoration($quote);
+        return $this->processQuoteRestoration($quote, $lastOrder);
     }
 
     /**
@@ -125,7 +128,7 @@ class QuoteRestoreManagement
         $lastOrder = $this->getLastOrderByQuoteId($quoteId);
         $this->validateOrderEligibility($lastOrder);
 
-        return $this->processQuoteRestoration($quote);
+        return $this->processQuoteRestoration($quote, $lastOrder);
     }
 
     /**
@@ -190,18 +193,21 @@ class QuoteRestoreManagement
     }
 
     /**
-     * Reactivate the quote, clear its reserved order ID, and dispatch restoration event.
+     * Reactivate the quote, clear its reserved order ID, cancel/audit the previous order, and dispatch event.
      *
      * @param Quote $quote
+     * @param OrderInterface|null $lastOrder
      * @return bool
      * @throws LocalizedException
      * @throws \RuntimeException
      */
-    private function processQuoteRestoration(Quote $quote): bool
+    private function processQuoteRestoration(Quote $quote, ?OrderInterface $lastOrder = null): bool
     {
         try {
             $quote->setIsActive(1)->setReservedOrderId(null);
             $this->cartRepository->save($quote);
+
+            $this->previousOrderProcessor?->process($lastOrder);
 
             $this->eventManager->dispatch('resilience_restore_quote', ['quote' => $quote]);
 

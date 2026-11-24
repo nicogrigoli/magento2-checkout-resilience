@@ -180,4 +180,19 @@ class Config
 
         return $trimmedMessage !== '' ? $trimmedMessage : self::DEFAULT_RETRY_NOTICE_MESSAGE;
     }
+
+    /**
+     * Check whether automatic cancellation of the previous pending order on quote restore is enabled.
+     *
+     * @param ?string $scopeCode
+     * @return bool
+     */
+    public function isCancelPreviousOrderEnabled(?string $scopeCode = null): bool
+    {
+        return $this->scopeConfig->isSetFlag(
+            self::BASE_PATH . self::GROUP_PATH_FAILURE_PAGE_RECOVERY . 'cancel_previous_order',
+            ScopeInterface::SCOPE_STORE,
+            $scopeCode
+        );
+    }
 }

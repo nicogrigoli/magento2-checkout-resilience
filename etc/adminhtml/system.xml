@@ -65,6 +65,11 @@
                         <field id="enable_pre_failure_retries">1</field>
                     </depends>
                 </field>
+                <field id="cancel_previous_order" translate="label, comment" type="select" sortOrder="70" showInDefault="1" showInWebsite="1" showInStore="1" canRestore="1">
+                    <label>Cancel Previous Pending Order on Quote Restore</label>
+                    <source_model>Magento\Config\Model\Config\Source\Yesno</source_model>
+                    <comment>Set 'Yes' to automatically cancel open previous orders (pending / pending_payment) when a quote is restored, releasing inventory reservations. Disable for asynchronous payment gateways.</comment>
+                </field>
             </group>
         </section>
     </system>

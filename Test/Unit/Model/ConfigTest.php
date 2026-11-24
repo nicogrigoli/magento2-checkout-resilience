@@ -27,6 +27,8 @@ class ConfigTest extends TestCase
         'checkout_resilience/failure_page_recovery/max_retry_attempts';
     private const XML_PATH_RETRY_NOTICE_MESSAGE =
         'checkout_resilience/failure_page_recovery/retry_notice_message';
+    private const XML_PATH_CANCEL_PREVIOUS_ORDER =
+        'checkout_resilience/failure_page_recovery/cancel_previous_order';
 
     /**
      * @var ScopeConfigInterface&MockObject
@@ -529,5 +531,24 @@ class ConfigTest extends TestCase
                 'expectedMessage' => 'Payment failed. Please try again (%1 attempts remaining).',
             ],
         ];
+    }
+
+    #[DataProvider('enabledFlagDataProvider')]
+    public function testIsCancelPreviousOrderEnabled(?string $scopeCode, bool $expectedResult): void
+    {
+        $this->scopeConfigMock->expects($this->once())
+            ->method('isSetFlag')
+            ->with(
+                self::XML_PATH_CANCEL_PREVIOUS_ORDER,
+                ScopeInterface::SCOPE_STORE,
+                $scopeCode
+            )
+            ->willReturn($expectedResult);
+
+        $result = $scopeCode === null
+            ? $this->config->isCancelPreviousOrderEnabled()
+            : $this->config->isCancelPreviousOrderEnabled($scopeCode);
+
+        $this->assertSame($expectedResult, $result);
     }
 }

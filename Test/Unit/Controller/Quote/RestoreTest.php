@@ -6,6 +6,7 @@ namespace Grigoli\CheckoutResilience\Test\Unit\Controller\Quote;
 
 use Grigoli\CheckoutResilience\Controller\Quote\Restore;
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Order\PreviousOrderProcessor;
 use Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver;
 use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Checkout\Model\Session as CheckoutSession;
@@ -87,6 +88,11 @@ class RestoreTest extends TestCase
     private LoggerInterface $loggerMock;
 
     /**
+     * @var PreviousOrderProcessor&MockObject
+     */
+    private PreviousOrderProcessor $previousOrderProcessorMock;
+
+    /**
      * @var Restore
      */
     private Restore $controller;
@@ -104,6 +110,7 @@ class RestoreTest extends TestCase
         $this->orderEligibilityValidatorMock = $this->createMock(OrderEligibilityValidator::class);
         $this->cartRepositoryMock = $this->createMock(CartRepositoryInterface::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
+        $this->previousOrderProcessorMock = $this->createMock(PreviousOrderProcessor::class);
 
         $this->resultRedirectFactoryMock->method('create')
             ->willReturn($this->resultRedirectMock);
@@ -118,7 +125,8 @@ class RestoreTest extends TestCase
             $this->redirectUrlResolverMock,
             $this->orderEligibilityValidatorMock,
             $this->cartRepositoryMock,
-            $this->loggerMock
+            $this->loggerMock,
+            $this->previousOrderProcessorMock
         );
     }
 
@@ -148,6 +156,10 @@ class RestoreTest extends TestCase
         $this->checkoutSessionMock->expects($this->once())
             ->method('restoreQuote')
             ->willReturn(true);
+
+        $this->previousOrderProcessorMock->expects($this->once())
+            ->method('process')
+            ->with($orderMock);
 
         $this->redirectUrlResolverMock->expects($this->once())
             ->method('resolve')

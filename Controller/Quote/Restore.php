@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Grigoli\CheckoutResilience\Controller\Quote;
 
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Order\PreviousOrderProcessor;
 use Grigoli\CheckoutResilience\Model\Resolver\RedirectUrlResolver;
 use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Checkout\Model\Session as CheckoutSession;
@@ -39,6 +40,8 @@ class Restore implements HttpPostActionInterface
      * @param OrderEligibilityValidator $orderEligibilityValidator
      * @param CartRepositoryInterface $cartRepository
      * @param LoggerInterface $logger
+     * @param PreviousOrderProcessor|null $previousOrderProcessor
+     * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
         private readonly RequestInterface $request,
@@ -50,7 +53,8 @@ class Restore implements HttpPostActionInterface
         private readonly RedirectUrlResolver $redirectUrlResolver,
         private readonly OrderEligibilityValidator $orderEligibilityValidator,
         private readonly CartRepositoryInterface $cartRepository,
-        private readonly LoggerInterface $logger
+        private readonly LoggerInterface $logger,
+        private readonly ?PreviousOrderProcessor $previousOrderProcessor = null
     ) {
     }
 
@@ -87,6 +91,7 @@ class Restore implements HttpPostActionInterface
             }
 
             if ($this->restoreSessionQuote($lastOrder)) {
+                $this->previousOrderProcessor?->process($lastOrder);
                 return $resultRedirect->setUrl($this->redirectUrlResolver->resolve());
             }
 
