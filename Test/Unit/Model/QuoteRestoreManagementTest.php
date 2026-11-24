@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Grigoli\CheckoutResilience\Test\Unit\Model;
 
 use Grigoli\CheckoutResilience\Model\Config;
+use Grigoli\CheckoutResilience\Model\Order\PreviousOrderProcessor;
 use Grigoli\CheckoutResilience\Model\QuoteRestoreManagement;
 use Grigoli\CheckoutResilience\Model\Validator\OrderEligibilityValidator;
 use Magento\Authorization\Model\UserContextInterface;
@@ -84,6 +85,11 @@ class QuoteRestoreManagementTest extends TestCase
     private LoggerInterface $loggerMock;
 
     /**
+     * @var PreviousOrderProcessor&MockObject
+     */
+    private PreviousOrderProcessor $previousOrderProcessorMock;
+
+    /**
      * @var QuoteRestoreManagement
      */
     private QuoteRestoreManagement $quoteRestoreManagement;
@@ -104,6 +110,7 @@ class QuoteRestoreManagementTest extends TestCase
         $this->sortOrderBuilderMock = $this->createMock(SortOrderBuilder::class);
         $this->configMock = $this->createMock(Config::class);
         $this->loggerMock = $this->createMock(LoggerInterface::class);
+        $this->previousOrderProcessorMock = $this->createMock(PreviousOrderProcessor::class);
 
         $this->quoteRestoreManagement = new QuoteRestoreManagement(
             $this->cartRepositoryMock,
@@ -115,7 +122,8 @@ class QuoteRestoreManagementTest extends TestCase
             $this->sortOrderBuilderMock,
             $this->configMock,
             new OrderEligibilityValidator($this->loggerMock),
-            $this->loggerMock
+            $this->loggerMock,
+            $this->previousOrderProcessorMock
         );
     }
 
@@ -158,6 +166,9 @@ class QuoteRestoreManagementTest extends TestCase
         $this->cartRepositoryMock->expects($this->once())
             ->method('save')
             ->with($quoteMock);
+
+        $this->previousOrderProcessorMock->expects($this->once())
+            ->method('process');
 
         $this->eventManagerMock->expects($this->once())
             ->method('dispatch')
@@ -539,6 +550,9 @@ class QuoteRestoreManagementTest extends TestCase
         $this->cartRepositoryMock->expects($this->once())
             ->method('save')
             ->with($quoteMock);
+
+        $this->previousOrderProcessorMock->expects($this->once())
+            ->method('process');
 
         $this->eventManagerMock->expects($this->once())
             ->method('dispatch')
