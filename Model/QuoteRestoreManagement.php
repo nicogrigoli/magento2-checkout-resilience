@@ -41,7 +41,7 @@ class QuoteRestoreManagement
      * @param Config $config
      * @param OrderEligibilityValidator $orderEligibilityValidator
      * @param LoggerInterface $logger
-     * @param PreviousOrderProcessor|null $previousOrderProcessor
+     * @param PreviousOrderProcessor $previousOrderProcessor
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
@@ -55,7 +55,7 @@ class QuoteRestoreManagement
         private readonly Config $config,
         private readonly OrderEligibilityValidator $orderEligibilityValidator,
         private readonly LoggerInterface $logger,
-        private readonly ?PreviousOrderProcessor $previousOrderProcessor = null
+        private readonly PreviousOrderProcessor $previousOrderProcessor
     ) {
     }
 
@@ -207,7 +207,7 @@ class QuoteRestoreManagement
             $quote->setIsActive(1)->setReservedOrderId(null);
             $this->cartRepository->save($quote);
 
-            $this->previousOrderProcessor?->process($lastOrder);
+            $this->previousOrderProcessor->process($lastOrder);
 
             $this->eventManager->dispatch('resilience_restore_quote', ['quote' => $quote]);
 

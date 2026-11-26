@@ -40,7 +40,7 @@ class Restore implements HttpPostActionInterface
      * @param OrderEligibilityValidator $orderEligibilityValidator
      * @param CartRepositoryInterface $cartRepository
      * @param LoggerInterface $logger
-     * @param PreviousOrderProcessor|null $previousOrderProcessor
+     * @param PreviousOrderProcessor $previousOrderProcessor
      * @SuppressWarnings(PHPMD.ExcessiveParameterList)
      */
     public function __construct(
@@ -54,7 +54,7 @@ class Restore implements HttpPostActionInterface
         private readonly OrderEligibilityValidator $orderEligibilityValidator,
         private readonly CartRepositoryInterface $cartRepository,
         private readonly LoggerInterface $logger,
-        private readonly ?PreviousOrderProcessor $previousOrderProcessor = null
+        private readonly PreviousOrderProcessor $previousOrderProcessor
     ) {
     }
 
@@ -91,7 +91,7 @@ class Restore implements HttpPostActionInterface
             }
 
             if ($this->restoreSessionQuote($lastOrder)) {
-                $this->previousOrderProcessor?->process($lastOrder);
+                $this->previousOrderProcessor->process($lastOrder);
                 return $resultRedirect->setUrl($this->redirectUrlResolver->resolve());
             }
 
