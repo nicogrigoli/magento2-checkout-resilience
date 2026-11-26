@@ -86,6 +86,8 @@ class OrderEligibilityValidatorTest extends TestCase
     {
         $orderMock = $this->createMock(Order::class);
         $orderMock->method('getEntityId')->willReturn(105);
+        $orderMock->method('getIncrementId')->willReturn('000000105');
+        $orderMock->method('getQuoteId')->willReturn(42);
         $orderMock->method('getState')->willReturn($state);
         $orderMock->method('hasInvoices')->willReturn(false);
 
@@ -94,7 +96,9 @@ class OrderEligibilityValidatorTest extends TestCase
             ->with(
                 'Quote restoration denied: order state is not eligible for restoration.',
                 [
+                    'quote_id' => 42,
                     'order_id' => 105,
+                    'increment_id' => '000000105',
                     'state' => $state,
                     'has_invoices' => false,
                     'reason' => 'ineligible_order_state',
@@ -124,6 +128,7 @@ class OrderEligibilityValidatorTest extends TestCase
         $orderMock = $this->createMock(Order::class);
         $orderMock->method('getEntityId')->willReturn(null);
         $orderMock->method('getIncrementId')->willReturn('000000105');
+        $orderMock->method('getQuoteId')->willReturn(42);
         $orderMock->method('getState')->willReturn($state);
         $orderMock->method('hasInvoices')->willReturn(true);
 
@@ -132,7 +137,9 @@ class OrderEligibilityValidatorTest extends TestCase
             ->with(
                 'Quote restoration denied: associated order already has invoices.',
                 [
+                    'quote_id' => 42,
                     'order_id' => '000000105',
+                    'increment_id' => '000000105',
                     'state' => $state,
                     'has_invoices' => true,
                     'reason' => 'order_has_invoices',
@@ -160,6 +167,8 @@ class OrderEligibilityValidatorTest extends TestCase
     {
         $orderMock = $this->createMock(OrderInterface::class);
         $orderMock->method('getEntityId')->willReturn(77);
+        $orderMock->method('getIncrementId')->willReturn('000000077');
+        $orderMock->method('getQuoteId')->willReturn(15);
         $orderMock->method('getState')->willReturn(Order::STATE_PENDING_PAYMENT);
         $orderMock->method('getBaseTotalInvoiced')->willReturn(99.99);
 
@@ -168,7 +177,9 @@ class OrderEligibilityValidatorTest extends TestCase
             ->with(
                 'Quote restoration denied: associated order already has invoices.',
                 [
+                    'quote_id' => 15,
                     'order_id' => 77,
+                    'increment_id' => '000000077',
                     'state' => Order::STATE_PENDING_PAYMENT,
                     'has_invoices' => true,
                     'reason' => 'order_has_invoices',

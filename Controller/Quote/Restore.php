@@ -92,6 +92,14 @@ class Restore implements HttpPostActionInterface
 
             if ($this->restoreSessionQuote($lastOrder)) {
                 $this->previousOrderProcessor->process($lastOrder);
+                $this->logger->info(
+                    'Quote restored from checkout failure page.',
+                    [
+                        'quote_id' => (int) $this->checkoutSession->getLastQuoteId(),
+                        'order_id' => $lastOrder?->getEntityId(),
+                        'increment_id' => $lastOrder?->getIncrementId(),
+                    ]
+                );
                 return $resultRedirect->setUrl($this->redirectUrlResolver->resolve());
             }
 
